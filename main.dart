@@ -1869,9 +1869,9 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
   List<OrcamentoItem> _itensPadrao() {
     return widget.respostasQuestionario.values
         .map((resposta) => OrcamentoItem(
-              descricao: resposta,
-              valor: widget.precos[resposta] ?? 0.0,
-            ))
+      descricao: resposta,
+      valor: widget.precos[resposta] ?? 0.0,
+    ))
         .toList();
   }
 
@@ -1899,7 +1899,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       final firestore = FirebaseFirestore.instance;
       final user = FirebaseAuth.instance.currentUser;
       final userEmail = user?.email ?? 'Usuário desconhecido';
-      const emailDestinatario = "e-mail ocutado";
+      const emailDestinatario = "luis.cappeletti@grupobaw.com.br";
       final itens = _itensAtuais();
 
       final dadosParaSalvar = {
@@ -1912,14 +1912,23 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         'margemMinimaPercentual': _margemMinimaPercentualAtual,
         'itensOrcamento': itens
             .map((item) => {
-                  'descricao': item.descricao,
-                  'valor': item.valor,
-                })
+          'descricao': item.descricao,
+          'valor': item.valor,
+        })
             .toList(),
         'criadoEm': FieldValue.serverTimestamp(),
       };
 
-      await firestore.collection('relatorios').add(dadosParaSalvar);
+      await firestore.collection('relatorios').add({
+        ...dadosParaSalvar,
+
+        "to": emailDestinatario,
+
+        "template": {
+          "name": "relatorioOrcamento",
+          "data": dadosParaSalvar
+        }
+      });
       await limitService.registrarOrcamento();
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2142,7 +2151,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       pw.Text('Itens do Orçamento', style: pw.TextStyle(font: boldFont, fontSize: 18)),
       pw.SizedBox(height: 8),
       ...itens.map(
-        (item) => pw.Padding(
+            (item) => pw.Padding(
           padding: const pw.EdgeInsets.symmetric(vertical: 2),
           child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
             pw.Expanded(child: pw.Text(item.descricao, style: pw.TextStyle(font: font, fontSize: 11))),
@@ -2263,7 +2272,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         );
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const PerguntasLivresScreen()),
-          (Route<dynamic> route) => false,
+              (Route<dynamic> route) => false,
         );
       }
     } catch (e) {
@@ -2293,7 +2302,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
     );
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const PerguntasLivresScreen()),
-      (Route<dynamic> route) => false,
+          (Route<dynamic> route) => false,
     );
   }
 
@@ -2324,7 +2333,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
     void reiniciarTudo() {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const PerguntasLivresScreen()),
-        (Route<dynamic> route) => false,
+            (Route<dynamic> route) => false,
       );
     }
 
@@ -2371,7 +2380,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
               if (context.mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (context) => const AuthGate()),
-                  (Route<dynamic> route) => false,
+                      (Route<dynamic> route) => false,
                 );
               }
             },
@@ -2419,11 +2428,11 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
             children: widget.respostasIniciais.entries
                 .map(
                   (e) => ListTile(
-                    dense: true,
-                    title: Text(e.key),
-                    subtitle: Text(e.value, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                )
+                dense: true,
+                title: Text(e.key),
+                subtitle: Text(e.value, style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            )
                 .toList(),
           ),
           const SizedBox(height: 16),
@@ -2434,11 +2443,11 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
             children: widget.respostasQuestionario.entries
                 .map(
                   (e) => ListTile(
-                    dense: true,
-                    title: Text(e.key),
-                    subtitle: Text(e.value, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                )
+                dense: true,
+                title: Text(e.key),
+                subtitle: Text(e.value, style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            )
                 .toList(),
           ),
           const SizedBox(height: 24),
