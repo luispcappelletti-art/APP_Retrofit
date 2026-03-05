@@ -1875,7 +1875,7 @@ class ResultadoScreen extends StatelessWidget {
       final firestore = FirebaseFirestore.instance;
       final user = FirebaseAuth.instance.currentUser;
       final userEmail = user?.email ?? 'Usuário desconhecido';
-      const emailDestinatario = "viviane.rucks@grupobaw.com.br";
+      const emailDestinatario = "e-mail ocutado";
 
       final dadosParaSalvar = {
         'destinatario': emailDestinatario,
@@ -2432,4 +2432,5 @@ class DetalheOrcamentoScreen extends StatelessWidget {
       ),
     );
   }
+
 }
