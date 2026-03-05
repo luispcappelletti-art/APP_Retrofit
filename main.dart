@@ -1881,6 +1881,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
   }
 
   double get _margemPercentualAtual => _orcamentoConfig?.margemPercentual ?? 15.0;
+  double get _margemMinimaPercentualAtual => _orcamentoConfig?.margemMinimaPercentual ?? 0.0;
 
   Future<void> _salvarRelatorioNoFirestore(BuildContext context, String estimativaFormatada) async {
     final limitService = LimitService();
@@ -1908,6 +1909,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         'respostasQuestionario': widget.respostasQuestionario,
         'estimativaFormatada': estimativaFormatada,
         'margemPercentual': _margemPercentualAtual,
+        'margemMinimaPercentual': _margemMinimaPercentualAtual,
         'itensOrcamento': itens
             .map((item) => {
                   'descricao': item.descricao,
@@ -2054,6 +2056,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
                       precos: widget.precos,
                       itensIniciais: _itensAtuais(),
                       margemPercentualInicial: _margemPercentualAtual,
+                      margemMinimaPercentualInicial: _margemMinimaPercentualAtual,
                     ),
                   ),
                 );
@@ -2078,6 +2081,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
   Map<String, double> _calcularEstimativa() {
     final itens = _itensAtuais();
     final margemPercentual = _margemPercentualAtual;
+    final margemMinimaPercentual = _margemMinimaPercentualAtual;
 
     double somaTotal = 0.0;
     widget.logs.add('\n🔎 Iniciando Cálculo de Preços...');
@@ -2087,19 +2091,22 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       widget.logs.add('✅ Item ["${item.descricao}"]: ${NumberFormat.currency(locale: 'pt_BR', symbol: r'R$').format(item.valor)}');
     }
 
+    final fatorMargemMinima = 1 + (margemMinimaPercentual / 100);
     final fatorMargem = 1 + (margemPercentual / 100);
-    final valorMinimo = somaTotal;
+    final valorMinimo = somaTotal * fatorMargemMinima;
     final valorMaximo = somaTotal * fatorMargem;
 
     final double valorMinimoArredondado = (valorMinimo / 1000).round() * 1000.0;
     final double valorMaximoArredondado = (valorMaximo / 1000).round() * 1000.0;
 
     widget.logs.add('📊 Soma total: ${NumberFormat.currency(locale: 'pt_BR', symbol: r'R$').format(somaTotal)}');
-    widget.logs.add('📈 Margem aplicada: ${margemPercentual.toStringAsFixed(1)}%');
+    widget.logs.add('📉 Margem mínima aplicada: ${margemMinimaPercentual.toStringAsFixed(1)}%');
+    widget.logs.add('📈 Margem máxima aplicada: ${margemPercentual.toStringAsFixed(1)}%');
 
     return {
       'subtotal': somaTotal,
       'margemPercentual': margemPercentual,
+      'margemMinimaPercentual': margemMinimaPercentual,
       'min': valorMinimoArredondado,
       'max': valorMaximoArredondado,
     };
@@ -2128,7 +2135,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
     ]);
   }
 
-  pw.Widget _buildItensOrcamentoSection(List<OrcamentoItem> itens, NumberFormat currencyFormat, pw.Font boldFont, pw.Font font) {
+  pw.Widget _buildItensOrcamentoSection(List<OrcamentoItem> itens, pw.Font boldFont, pw.Font font) {
     return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
       pw.Text('Itens do Orçamento', style: pw.TextStyle(font: boldFont, fontSize: 18)),
       pw.SizedBox(height: 8),
@@ -2137,7 +2144,6 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
           padding: const pw.EdgeInsets.symmetric(vertical: 2),
           child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
             pw.Expanded(child: pw.Text(item.descricao, style: pw.TextStyle(font: font, fontSize: 11))),
-            pw.Text(currencyFormat.format(item.valor), style: pw.TextStyle(font: font, fontSize: 11)),
           ]),
         ),
       ),
@@ -2192,12 +2198,10 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         build: (pw.Context context) => [
           _buildAnswersSection('Informações do Cliente', widget.respostasIniciais, boldFont, font),
           pw.SizedBox(height: 20),
-          _buildItensOrcamentoSection(itens, currencyFormat, boldFont, font),
+          _buildItensOrcamentoSection(itens, boldFont, font),
           pw.SizedBox(height: 12),
           pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
           pw.SizedBox(height: 8),
-          pw.Text('Subtotal: ${currencyFormat.format(estimativa['subtotal'])}', style: pw.TextStyle(font: font, fontSize: 12)),
-          pw.Text('Margem aplicada: ${_margemPercentualAtual.toStringAsFixed(1)}%', style: pw.TextStyle(font: font, fontSize: 12)),
           pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
           pw.SizedBox(height: 8),
           pw.Text(
@@ -2235,9 +2239,42 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
 
       final pdfBytes = await _generatePdfReport(PdfPageFormat.a4);
       await Printing.sharePdf(bytes: pdfBytes, filename: 'relatorio_perguntas.pdf');
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Relatório finalizado e PDF gerado com sucesso.')),
+        );
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const PerguntasLivresScreen()),
+          (Route<dynamic> route) => false,
+        );
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao gerar ou partilhar PDF: $e')));
     }
+  }
+
+  Future<void> _finalizarRelatorioSemPdf(BuildContext context) async {
+    final estimativa = _calcularEstimativa();
+    final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
+    final estimativaFormatada =
+        '${currencyFormat.format(estimativa['min'])} ~ ${currencyFormat.format(estimativa['max'])}';
+
+    if (!_relatorioSalvo) {
+      await _salvarRelatorioNoFirestore(context, estimativaFormatada);
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Relatório finalizado e enviado para processamento.')),
+    );
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const PerguntasLivresScreen()),
+      (Route<dynamic> route) => false,
+    );
   }
 
   Widget _buildSectionCard(BuildContext context, {required String title, required IconData icon, required List<Widget> children}) {
@@ -2346,7 +2383,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '(margem atual: ${_margemPercentualAtual.toStringAsFixed(1)}%)',
+                      '(margem mínima: ${_margemMinimaPercentualAtual.toStringAsFixed(1)}% | margem máxima: ${_margemPercentualAtual.toStringAsFixed(1)}%)',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white60),
                     ),
                   ],
@@ -2386,8 +2423,14 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
+            icon: const Icon(Icons.check_circle_outline),
+            label: const Text('FINALIZAR RELATÓRIO'),
+            onPressed: () => _finalizarRelatorioSemPdf(context),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
             icon: const Icon(Icons.picture_as_pdf_outlined),
-            label: const Text('GERAR RELATÓRIO EM PDF'),
+            label: const Text('GERAR PDF E FINALIZAR RELATÓRIO'),
             onPressed: () => _shareReport(context),
           ),
           const SizedBox(height: 12),
@@ -2432,8 +2475,13 @@ class OrcamentoItem {
 class OrcamentoConfiguracao {
   final List<OrcamentoItem> itens;
   final double margemPercentual;
+  final double margemMinimaPercentual;
 
-  OrcamentoConfiguracao({required this.itens, required this.margemPercentual});
+  OrcamentoConfiguracao({
+    required this.itens,
+    required this.margemPercentual,
+    this.margemMinimaPercentual = 0.0,
+  });
 }
 
 class DetalheOrcamentoScreen extends StatefulWidget {
@@ -2441,6 +2489,7 @@ class DetalheOrcamentoScreen extends StatefulWidget {
   final Map<String, double> precos;
   final List<OrcamentoItem> itensIniciais;
   final double margemPercentualInicial;
+  final double margemMinimaPercentualInicial;
 
   const DetalheOrcamentoScreen({
     super.key,
@@ -2448,6 +2497,7 @@ class DetalheOrcamentoScreen extends StatefulWidget {
     required this.precos,
     required this.itensIniciais,
     required this.margemPercentualInicial,
+    this.margemMinimaPercentualInicial = 0.0,
   });
 
   @override
@@ -2457,12 +2507,14 @@ class DetalheOrcamentoScreen extends StatefulWidget {
 class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
   final List<OrcamentoItem> _itens = [];
   late double _margemPercentual;
+  late double _margemMinimaPercentual;
 
   @override
   void initState() {
     super.initState();
     _itens.addAll(widget.itensIniciais.map((item) => item.copy()));
     _margemPercentual = widget.margemPercentualInicial;
+    _margemMinimaPercentual = widget.margemMinimaPercentualInicial;
   }
 
   double _parseValor(String input) {
@@ -2615,8 +2667,9 @@ class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
       );
     }
 
+    final fatorMargemMinima = 1 + (_margemMinimaPercentual / 100);
     final fatorMargem = 1 + (_margemPercentual / 100);
-    final valorMinimoBruto = somaTotal;
+    final valorMinimoBruto = somaTotal * fatorMargemMinima;
     final valorMaximoBruto = somaTotal * fatorMargem;
     final valorMinimoArredondado = (valorMinimoBruto / 1000).round() * 1000.0;
     final valorMaximoArredondado = (valorMaximoBruto / 1000).round() * 1000.0;
@@ -2655,6 +2708,22 @@ class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
             child: Column(
               children: [
                 ListTile(
+                  title: const Text('Margem aplicada ao valor mínimo'),
+                  trailing: Text('${_margemMinimaPercentual.toStringAsFixed(1)}%'),
+                ),
+                Slider(
+                  min: -50,
+                  max: 50,
+                  divisions: 200,
+                  value: _margemMinimaPercentual,
+                  label: '${_margemMinimaPercentual.toStringAsFixed(1)}%',
+                  onChanged: (novoValor) {
+                    setState(() {
+                      _margemMinimaPercentual = novoValor;
+                    });
+                  },
+                ),
+                ListTile(
                   title: const Text('Margem aplicada ao valor máximo'),
                   trailing: Text('${_margemPercentual.toStringAsFixed(1)}%'),
                 ),
@@ -2687,8 +2756,8 @@ class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
                   trailing: Text(currencyFormat.format(somaTotal), style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 ListTile(
-                  title: const Text('Valor Mínimo (Subtotal)'),
-                  subtitle: const Text('Subtotal x 1.0'),
+                  title: Text('Valor Mínimo (${_margemMinimaPercentual.toStringAsFixed(1)}%)'),
+                  subtitle: const Text('Subtotal x (1 + margem mínima)'),
                   trailing: Text(currencyFormat.format(valorMinimoBruto)),
                 ),
                 ListTile(
@@ -2714,6 +2783,7 @@ class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
                 OrcamentoConfiguracao(
                   itens: _itens.map((item) => item.copy()).toList(),
                   margemPercentual: _margemPercentual,
+                  margemMinimaPercentual: _margemMinimaPercentual,
                 ),
               );
             },
