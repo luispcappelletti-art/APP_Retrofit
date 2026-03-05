@@ -1883,7 +1883,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
   double get _margemPercentualAtual => _orcamentoConfig?.margemPercentual ?? 15.0;
   double get _margemMinimaPercentualAtual => _orcamentoConfig?.margemMinimaPercentual ?? 0.0;
 
-  Future<void> _salvarRelatorioNoFirestore(BuildContext context, String estimativaFormatada) async {
+  Future<bool> _salvarRelatorioNoFirestore(BuildContext context, String estimativaFormatada) async {
     final limitService = LimitService();
     if (!await limitService.podeFazerOrcamento()) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1892,7 +1892,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
           backgroundColor: Colors.red,
         ),
       );
-      return;
+      return false;
     }
 
     try {
@@ -1929,6 +1929,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         ),
       );
       _relatorioSalvo = true;
+      return true;
     } catch (e) {
       String errorMessage = 'Ocorreu um erro inesperado: $e';
       if (e is FirebaseException && e.code == 'permission-denied') {
@@ -1940,6 +1941,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
           backgroundColor: Colors.red,
         ),
       );
+      return false;
     }
   }
 
@@ -2152,12 +2154,24 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
 
   Future<Uint8List> _generatePdfReport(PdfPageFormat format) async {
     final doc = pw.Document();
-    final font = await PdfGoogleFonts.robotoRegular();
-    final boldFont = await PdfGoogleFonts.robotoBold();
+    pw.Font font;
+    pw.Font boldFont;
+    try {
+      font = await PdfGoogleFonts.robotoRegular();
+      boldFont = await PdfGoogleFonts.robotoBold();
+    } catch (_) {
+      font = pw.Font.helvetica();
+      boldFont = pw.Font.helveticaBold();
+    }
 
-    final logoData = await rootBundle.load('assets/images/logo.png');
-    final logoBytes = logoData.buffer.asUint8List();
-    final logoImage = pw.MemoryImage(logoBytes);
+    pw.MemoryImage? logoImage;
+    try {
+      final logoData = await rootBundle.load('assets/images/logo.png');
+      final logoBytes = logoData.buffer.asUint8List();
+      logoImage = pw.MemoryImage(logoBytes);
+    } catch (_) {
+      logoImage = null;
+    }
 
     final itens = _itensAtuais();
     final estimativa = _calcularEstimativa();
@@ -2187,7 +2201,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
                       pw.Text(DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()), style: pw.TextStyle(font: font, fontSize: 12)),
                     ],
                   ),
-                  pw.Image(logoImage, height: 50),
+                  if (logoImage != null) pw.Image(logoImage, height: 50),
                 ],
               ),
               pw.Divider(thickness: 2),
@@ -2234,7 +2248,10 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
           '${currencyFormat.format(estimativa['min'])} ~ ${currencyFormat.format(estimativa['max'])}';
 
       if (!_relatorioSalvo) {
-        await _salvarRelatorioNoFirestore(context, estimativaFormatada);
+        final salvou = await _salvarRelatorioNoFirestore(context, estimativaFormatada);
+        if (!salvou) {
+          return;
+        }
       }
 
       final pdfBytes = await _generatePdfReport(PdfPageFormat.a4);
@@ -2261,7 +2278,10 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         '${currencyFormat.format(estimativa['min'])} ~ ${currencyFormat.format(estimativa['max'])}';
 
     if (!_relatorioSalvo) {
-      await _salvarRelatorioNoFirestore(context, estimativaFormatada);
+      final salvou = await _salvarRelatorioNoFirestore(context, estimativaFormatada);
+      if (!salvou) {
+        return;
+      }
     }
 
     if (!mounted) {
