@@ -44,7 +44,7 @@ class InfoItem {
 
 class LimitService {
 // ... (código existente da classe LimitService)
-  static const int maxOrcamentos = 15;
+  static const int maxOrcamentos = 25;
   static const int maxSincronizacoes = 1;
 
   late SharedPreferences _prefs;
@@ -1867,19 +1867,21 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
   bool _relatorioSalvo = false;
 
   String _montarEscopoEmail(
-    List<OrcamentoItem> itensAtuais,
-    String estimativaFormatada,
-  ) {
+      List<OrcamentoItem> itensAtuais,
+      String estimativaFormatada,
+      ) {
     final buffer = StringBuffer();
 
-    buffer.writeln('PERGUNTAS INICIAIS');
+    buffer.writeln('<h3>PERGUNTAS INICIAIS</h3>');
+
     widget.respostasIniciais.forEach((pergunta, resposta) {
-      buffer.writeln('- $pergunta: $resposta');
+      buffer.writeln('• <b>$pergunta</b>: $resposta<br>');
     });
 
-    buffer.writeln('\nPERGUNTAS TÉCNICAS');
+    buffer.writeln('<br><h3>PERGUNTAS TÉCNICAS</h3>');
+
     widget.respostasQuestionario.forEach((pergunta, resposta) {
-      buffer.writeln('- $pergunta: $resposta');
+      buffer.writeln('• <b>$pergunta</b>: $resposta<br>');
     });
 
     final itensPadrao = _itensPadrao();
@@ -1892,30 +1894,36 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       if (itemPadrao == null ||
           itemPadrao.descricao != itemAtual.descricao ||
           itemPadrao.valor != itemAtual.valor) {
+
         final valorOriginal = itemPadrao?.valor ?? 0.0;
         final descricaoOriginal = itemPadrao?.descricao ?? 'Não definido';
+
         itensComAlteracoes.add(
-          '- ${itemAtual.descricao} (antes: "$descricaoOriginal" / R\$ ${valorOriginal.toStringAsFixed(2)}, agora: R\$ ${itemAtual.valor.toStringAsFixed(2)})',
+          '• ${itemAtual.descricao} (antes: "$descricaoOriginal" / R\$ ${valorOriginal.toStringAsFixed(2)}, agora: R\$ ${itemAtual.valor.toStringAsFixed(2)})<br>',
         );
       }
     }
 
-    buffer.writeln('\nMODIFICAÇÕES');
+    buffer.writeln('<br><h3>MODIFICAÇÕES</h3>');
+
     if (itensComAlteracoes.isEmpty) {
-      buffer.writeln('- Nenhuma modificação manual aplicada ao orçamento.');
+      buffer.writeln('• Nenhuma modificação manual aplicada ao orçamento.<br>');
     } else {
       for (final alteracao in itensComAlteracoes) {
         buffer.writeln(alteracao);
       }
     }
 
-    buffer.writeln('\nRESULTADOS FINAIS');
-    buffer.writeln('- Estimativa final: $estimativaFormatada');
-    buffer.writeln('- Margem aplicada: ${_margemPercentualAtual.toStringAsFixed(2)}%');
-    buffer.writeln('- Margem mínima aplicada: ${_margemMinimaPercentualAtual.toStringAsFixed(2)}%');
-    buffer.writeln('- Itens finais do orçamento:');
+    buffer.writeln('<br><h3>RESULTADOS FINAIS</h3>');
+
+    buffer.writeln('• <b>Estimativa final:</b> $estimativaFormatada<br>');
+    buffer.writeln('• <b>Margem aplicada:</b> ${_margemPercentualAtual.toStringAsFixed(2)}%<br>');
+    buffer.writeln('• <b>Margem mínima:</b> ${_margemMinimaPercentualAtual.toStringAsFixed(2)}%<br>');
+
+    buffer.writeln('<br><b>Itens finais do orçamento</b><br>');
+
     for (final item in itensAtuais) {
-      buffer.writeln('  • ${item.descricao}: R\$ ${item.valor.toStringAsFixed(2)}');
+      buffer.writeln('• ${item.descricao}: R\$ ${item.valor.toStringAsFixed(2)}<br>');
     }
 
     return buffer.toString();
@@ -1977,22 +1985,28 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       final escopoEmailTexto = _montarEscopoEmail(itens, estimativaFormatada);
 
       await firestore.collection('relatorios').add({
-        ...dadosParaSalvar,
-
-        "to": emailDestinatario,
-
-        "template": {
-          "name": "relatorioOrcamento",
-          "data": dadosParaSalvar
-        }
+        ...dadosParaSalvar
       });
 
       await firestore.collection('EscopoEmail').add({
-        'escopoTexto': escopoEmailTexto,
-        'destinatario': emailDestinatario,
-        'orcamentistaEmail': userEmail,
-        'criadoEm': FieldValue.serverTimestamp(),
+
+        "to": emailDestinatario,
+
+        "orcamentistaEmail": userEmail,
+        "escopoTexto": escopoEmailTexto,
+
+        "template": {
+          "name": "relatorioOrcamento",
+          "data": {
+            "orcamentistaEmail": userEmail,
+            "escopoTexto": escopoEmailTexto
+          }
+        },
+
+        "criadoEm": FieldValue.serverTimestamp(),
+
       });
+
       await limitService.registrarOrcamento();
 
       ScaffoldMessenger.of(context).showSnackBar(
