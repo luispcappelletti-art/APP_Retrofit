@@ -1866,6 +1866,61 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
   OrcamentoConfiguracao? _orcamentoConfig;
   bool _relatorioSalvo = false;
 
+  String _montarEscopoEmail(
+    List<OrcamentoItem> itensAtuais,
+    String estimativaFormatada,
+  ) {
+    final buffer = StringBuffer();
+
+    buffer.writeln('PERGUNTAS INICIAIS');
+    widget.respostasIniciais.forEach((pergunta, resposta) {
+      buffer.writeln('- $pergunta: $resposta');
+    });
+
+    buffer.writeln('\nPERGUNTAS TÉCNICAS');
+    widget.respostasQuestionario.forEach((pergunta, resposta) {
+      buffer.writeln('- $pergunta: $resposta');
+    });
+
+    final itensPadrao = _itensPadrao();
+    final itensComAlteracoes = <String>[];
+
+    for (int i = 0; i < itensAtuais.length; i++) {
+      final itemAtual = itensAtuais[i];
+      final itemPadrao = i < itensPadrao.length ? itensPadrao[i] : null;
+
+      if (itemPadrao == null ||
+          itemPadrao.descricao != itemAtual.descricao ||
+          itemPadrao.valor != itemAtual.valor) {
+        final valorOriginal = itemPadrao?.valor ?? 0.0;
+        final descricaoOriginal = itemPadrao?.descricao ?? 'Não definido';
+        itensComAlteracoes.add(
+          '- ${itemAtual.descricao} (antes: "$descricaoOriginal" / R\$ ${valorOriginal.toStringAsFixed(2)}, agora: R\$ ${itemAtual.valor.toStringAsFixed(2)})',
+        );
+      }
+    }
+
+    buffer.writeln('\nMODIFICAÇÕES');
+    if (itensComAlteracoes.isEmpty) {
+      buffer.writeln('- Nenhuma modificação manual aplicada ao orçamento.');
+    } else {
+      for (final alteracao in itensComAlteracoes) {
+        buffer.writeln(alteracao);
+      }
+    }
+
+    buffer.writeln('\nRESULTADOS FINAIS');
+    buffer.writeln('- Estimativa final: $estimativaFormatada');
+    buffer.writeln('- Margem aplicada: ${_margemPercentualAtual.toStringAsFixed(2)}%');
+    buffer.writeln('- Margem mínima aplicada: ${_margemMinimaPercentualAtual.toStringAsFixed(2)}%');
+    buffer.writeln('- Itens finais do orçamento:');
+    for (final item in itensAtuais) {
+      buffer.writeln('  • ${item.descricao}: R\$ ${item.valor.toStringAsFixed(2)}');
+    }
+
+    return buffer.toString();
+  }
+
   List<OrcamentoItem> _itensPadrao() {
     return widget.respostasQuestionario.values
         .map((resposta) => OrcamentoItem(
@@ -1919,6 +1974,8 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         'criadoEm': FieldValue.serverTimestamp(),
       };
 
+      final escopoEmailTexto = _montarEscopoEmail(itens, estimativaFormatada);
+
       await firestore.collection('relatorios').add({
         ...dadosParaSalvar,
 
@@ -1928,6 +1985,13 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
           "name": "relatorioOrcamento",
           "data": dadosParaSalvar
         }
+      });
+
+      await firestore.collection('EscopoEmail').add({
+        'escopoTexto': escopoEmailTexto,
+        'destinatario': emailDestinatario,
+        'orcamentistaEmail': userEmail,
+        'criadoEm': FieldValue.serverTimestamp(),
       });
       await limitService.registrarOrcamento();
 
