@@ -1983,6 +1983,57 @@ class ResultadoScreen extends StatelessWidget {
     );
   }
 
+  void _promptSenhaEdicaoOrcamento(BuildContext context) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Acesso Restrito'),
+          content: TextFormField(
+            controller: controller,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Senha para editar orçamento',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('CANCELAR'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (controller.text == 'log') {
+                  Navigator.of(dialogContext).pop();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DetalheOrcamentoScreen(
+                        respostasQuestionario: respostasQuestionario,
+                        precos: precos,
+                      ),
+                    ),
+                  );
+                } else {
+                  Navigator.of(dialogContext).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Senha incorreta.'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: const Text('ACESSAR'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   //
   // ✨✨✨ ALTERAÇÃO APLICADA AQUI ✨✨✨
   //
@@ -2239,15 +2290,7 @@ class ResultadoScreen extends StatelessWidget {
           //
           GestureDetector(
             onDoubleTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => DetalheOrcamentoScreen(
-                    respostasQuestionario: respostasQuestionario,
-                    precos: precos,
-                  ),
-                ),
-              );
+              _promptSenhaEdicaoOrcamento(context);
             },
             child: Card(
               color: Colors.teal,
@@ -2340,7 +2383,14 @@ class ResultadoScreen extends StatelessWidget {
 //
 // ✨✨✨ NOVA TELA ADICIONADA AQUI ✨✨✨
 //
-class DetalheOrcamentoScreen extends StatelessWidget {
+class OrcamentoItem {
+  String descricao;
+  double valor;
+
+  OrcamentoItem({required this.descricao, required this.valor});
+}
+
+class DetalheOrcamentoScreen extends StatefulWidget {
   final Map<String, String> respostasQuestionario;
   final Map<String, double> precos;
 
@@ -2351,19 +2401,171 @@ class DetalheOrcamentoScreen extends StatelessWidget {
   });
 
   @override
+  State<DetalheOrcamentoScreen> createState() => _DetalheOrcamentoScreenState();
+}
+
+class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
+  final List<OrcamentoItem> _itens = [];
+
+  @override
+  void initState() {
+    super.initState();
+    for (final resposta in widget.respostasQuestionario.values) {
+      _itens.add(
+        OrcamentoItem(
+          descricao: resposta,
+          valor: widget.precos[resposta] ?? 0.0,
+        ),
+      );
+    }
+  }
+
+  double _parseValor(String input) {
+    return double.tryParse(input.replaceAll(',', '.')) ?? 0.0;
+  }
+
+  Future<void> _mostrarDialogoAdicionarItem() async {
+    final descricaoController = TextEditingController();
+    final valorController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Adicionar item manualmente'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: descricaoController,
+                decoration: const InputDecoration(labelText: 'Descrição'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: valorController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Valor'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('CANCELAR'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final descricao = descricaoController.text.trim();
+                if (descricao.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Informe a descrição do item.')),
+                  );
+                  return;
+                }
+
+                final valor = _parseValor(valorController.text.trim());
+                setState(() {
+                  _itens.add(OrcamentoItem(descricao: descricao, valor: valor));
+                });
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('ADICIONAR'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _mostrarDialogoEditarItem(int index) async {
+    final item = _itens[index];
+    final descricaoController = TextEditingController(text: item.descricao);
+    final valorController = TextEditingController(text: item.valor.toStringAsFixed(2));
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Editar item'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: descricaoController,
+                decoration: const InputDecoration(labelText: 'Descrição'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: valorController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Valor'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('CANCELAR'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final descricao = descricaoController.text.trim();
+                if (descricao.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Informe a descrição do item.')),
+                  );
+                  return;
+                }
+
+                setState(() {
+                  _itens[index]
+                    ..descricao = descricao
+                    ..valor = _parseValor(valorController.text.trim());
+                });
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('SALVAR'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
     double somaTotal = 0.0;
     final List<Widget> itensWidgets = [];
 
     // 1. Criar lista de widgets para cada item e calcular a soma
-    for (final resposta in respostasQuestionario.values) {
-      final precoItem = precos[resposta] ?? 0.0;
-      somaTotal += precoItem;
+    for (int i = 0; i < _itens.length; i++) {
+      final item = _itens[i];
+      somaTotal += item.valor;
       itensWidgets.add(
         ListTile(
-          title: Text(resposta),
-          trailing: Text(currencyFormat.format(precoItem)),
+          title: Text(item.descricao),
+          subtitle: Text('Valor ajustável apenas neste relatório', style: TextStyle(color: Colors.grey.shade600)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(currencyFormat.format(item.valor)),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined),
+                tooltip: 'Editar item',
+                onPressed: () => _mostrarDialogoEditarItem(i),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Remover item',
+                onPressed: () {
+                  setState(() {
+                    _itens.removeAt(i);
+                  });
+                },
+              ),
+            ],
+          ),
           dense: true,
         ),
       );
@@ -2378,6 +2580,13 @@ class DetalheOrcamentoScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Detalhamento do Orçamento'),
+        actions: [
+          IconButton(
+            onPressed: _mostrarDialogoAdicionarItem,
+            icon: const Icon(Icons.add),
+            tooltip: 'Adicionar item',
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
