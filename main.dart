@@ -3128,7 +3128,10 @@ class HistoricoOrcamentosScreen extends StatefulWidget {
 
 class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
   final _historicoService = HistoricoOrcamentosService();
+  final TextEditingController _filtroClienteController = TextEditingController();
   bool _carregando = true;
+  DateTime? _dataFiltro;
+  List<Map<String, dynamic>> _todosRegistros = [];
   List<Map<String, dynamic>> _registros = [];
 
   @override
@@ -3141,8 +3144,72 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
     final historico = await _historicoService.carregarHistorico();
     if (!mounted) return;
     setState(() {
+      _todosRegistros = historico;
       _registros = historico;
       _carregando = false;
+    });
+    _aplicarFiltros();
+  }
+
+  @override
+  void dispose() {
+    _filtroClienteController.dispose();
+    super.dispose();
+  }
+
+  List<String> _opcoesFiltroCliente() {
+    final sugestoes = <String>{};
+    for (final registro in _todosRegistros) {
+      final dados = registro['dados'] is Map
+          ? Map<String, dynamic>.from(registro['dados'])
+          : <String, dynamic>{};
+      final respostasIniciais = dados['respostasIniciais'] is Map
+          ? Map<String, dynamic>.from(dados['respostasIniciais'])
+          : <String, dynamic>{};
+
+      for (final resposta in respostasIniciais.values) {
+        final valor = resposta.toString().trim();
+        if (valor.isNotEmpty) {
+          sugestoes.add(valor);
+        }
+      }
+    }
+
+    final lista = sugestoes.toList();
+    lista.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return lista;
+  }
+
+  void _aplicarFiltros() {
+    final termoCliente = _filtroClienteController.text.trim().toLowerCase();
+    final registrosFiltrados = _todosRegistros.where((registro) {
+      final dados = registro['dados'] is Map
+          ? Map<String, dynamic>.from(registro['dados'])
+          : <String, dynamic>{};
+
+      final respostasIniciais = dados['respostasIniciais'] is Map
+          ? Map<String, dynamic>.from(dados['respostasIniciais'])
+          : <String, dynamic>{};
+
+      final bateCliente = termoCliente.isEmpty || respostasIniciais.values.any((resposta) {
+            final valor = resposta.toString().toLowerCase();
+            return valor.contains(termoCliente);
+          });
+
+      if (!bateCliente) return false;
+
+      if (_dataFiltro == null) return true;
+
+      final criadoEm = DateTime.tryParse(registro['criadoEm']?.toString() ?? '');
+      if (criadoEm == null) return false;
+
+      return criadoEm.year == _dataFiltro!.year &&
+          criadoEm.month == _dataFiltro!.month &&
+          criadoEm.day == _dataFiltro!.day;
+    }).toList();
+
+    setState(() {
+      _registros = registrosFiltrados;
     });
   }
 
@@ -3152,11 +3219,108 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
       appBar: AppBar(title: const Text('Histórico de Orçamentos')),
       body: _carregando
           ? const Center(child: CircularProgressIndicator())
-          : _registros.isEmpty
-              ? const Center(
-                  child: Text('Nenhum orçamento registrado ainda.'),
-                )
-              : ListView.builder(
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Filtros',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Autocomplete<String>(
+                            optionsBuilder: (textEditingValue) {
+                              final termo = textEditingValue.text.trim().toLowerCase();
+                              final opcoes = _opcoesFiltroCliente();
+                              if (termo.isEmpty) {
+                                return opcoes;
+                              }
+                              return opcoes.where((opcao) => opcao.toLowerCase().contains(termo));
+                            },
+                            onSelected: (selecionado) {
+                              _filtroClienteController.text = selecionado;
+                              _aplicarFiltros();
+                            },
+                            fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                              if (_filtroClienteController.text.isNotEmpty && controller.text != _filtroClienteController.text) {
+                                controller.text = _filtroClienteController.text;
+                                controller.selection = TextSelection.collapsed(offset: controller.text.length);
+                              }
+                              return TextField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                decoration: const InputDecoration(
+                                  labelText: 'Cliente (respostas iniciais)',
+                                  hintText: 'Digite para filtrar com preenchimento automático',
+                                  prefixIcon: Icon(Icons.person_search_rounded),
+                                  border: OutlineInputBorder(),
+                                ),
+                                onChanged: (valor) {
+                                  _filtroClienteController.text = valor;
+                                  _aplicarFiltros();
+                                },
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () async {
+                                    final dataSelecionada = await showDatePicker(
+                                      context: context,
+                                      initialDate: _dataFiltro ?? DateTime.now(),
+                                      firstDate: DateTime(2020),
+                                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                                      locale: const Locale('pt', 'BR'),
+                                    );
+                                    if (dataSelecionada == null) return;
+
+                                    setState(() {
+                                      _dataFiltro = dataSelecionada;
+                                    });
+                                    _aplicarFiltros();
+                                  },
+                                  icon: const Icon(Icons.date_range_rounded),
+                                  label: Text(
+                                    _dataFiltro == null
+                                        ? 'Filtrar por data do relatório'
+                                        : 'Data: ${DateFormat('dd/MM/yyyy').format(_dataFiltro!)}',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                tooltip: 'Limpar filtros',
+                                onPressed: () {
+                                  _filtroClienteController.clear();
+                                  setState(() {
+                                    _dataFiltro = null;
+                                  });
+                                  _aplicarFiltros();
+                                },
+                                icon: const Icon(Icons.filter_alt_off_rounded),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _registros.isEmpty
+                      ? const Center(
+                          child: Text('Nenhum relatório encontrado para os filtros aplicados.'),
+                        )
+                      : ListView.builder(
                   padding: const EdgeInsets.all(12),
                   itemCount: _registros.length,
                   itemBuilder: (context, index) {
@@ -3220,6 +3384,33 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
                             ),
                             const SizedBox(height: 10),
                           ],
+                          if ((dados['respostasQuestionario'] as Map?)?.isNotEmpty == true) ...[
+                            const Text('Perguntas técnicas respondidas', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            ...(Map<String, dynamic>.from(dados['respostasQuestionario'] as Map)).entries.map(
+                              (e) => Text('• ${e.key}: ${e.value}'),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          const Text('Resultados', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Text('Estimativa: ${dados['estimativaFormatada'] ?? 'Não calculada'}'),
+                          Text('Margem aplicada: ${(dados['margemPercentual'] ?? 0).toString()}%'),
+                          Text('Margem mínima: ${(dados['margemMinimaPercentual'] ?? 0).toString()}%'),
+                          const SizedBox(height: 8),
+                          if ((dados['itensOrcamento'] as List?)?.isNotEmpty == true) ...[
+                            const Text('Itens finais do orçamento', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            ...(dados['itensOrcamento'] as List)
+                                .whereType<Map>()
+                                .map((item) => Map<String, dynamic>.from(item))
+                                .map(
+                                  (item) => Text(
+                                    '• ${item['descricao'] ?? 'Sem descrição'}: R\$ ${(item['valor'] ?? 0).toString()}',
+                                  ),
+                                ),
+                            const SizedBox(height: 8),
+                          ],
                           if (registro['erroEnvio'] != null) ...[
                             Text(
                               'Último erro de envio: ${registro['erroEnvio']}',
@@ -3231,6 +3422,9 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
                     );
                   },
                 ),
+              ),
+            ],
+          ),
     );
   }
 }
