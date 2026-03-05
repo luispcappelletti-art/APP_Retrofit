@@ -3130,7 +3130,6 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
   final _historicoService = HistoricoOrcamentosService();
   final TextEditingController _filtroClienteController = TextEditingController();
   bool _carregando = true;
-  DateTime? _dataFiltro;
   List<Map<String, dynamic>> _todosRegistros = [];
   List<Map<String, dynamic>> _registros = [];
 
@@ -3196,16 +3195,7 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
             return valor.contains(termoCliente);
           });
 
-      if (!bateCliente) return false;
-
-      if (_dataFiltro == null) return true;
-
-      final criadoEm = DateTime.tryParse(registro['criadoEm']?.toString() ?? '');
-      if (criadoEm == null) return false;
-
-      return criadoEm.year == _dataFiltro!.year &&
-          criadoEm.month == _dataFiltro!.month &&
-          criadoEm.day == _dataFiltro!.day;
+      return bateCliente;
     }).toList();
 
     setState(() {
@@ -3269,46 +3259,16 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
                             },
                           ),
                           const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () async {
-                                    final dataSelecionada = await showDatePicker(
-                                      context: context,
-                                      initialDate: _dataFiltro ?? DateTime.now(),
-                                      firstDate: DateTime(2020),
-                                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                                      locale: const Locale('pt', 'BR'),
-                                    );
-                                    if (dataSelecionada == null) return;
-
-                                    setState(() {
-                                      _dataFiltro = dataSelecionada;
-                                    });
-                                    _aplicarFiltros();
-                                  },
-                                  icon: const Icon(Icons.date_range_rounded),
-                                  label: Text(
-                                    _dataFiltro == null
-                                        ? 'Filtrar por data do relatório'
-                                        : 'Data: ${DateFormat('dd/MM/yyyy').format(_dataFiltro!)}',
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                tooltip: 'Limpar filtros',
-                                onPressed: () {
-                                  _filtroClienteController.clear();
-                                  setState(() {
-                                    _dataFiltro = null;
-                                  });
-                                  _aplicarFiltros();
-                                },
-                                icon: const Icon(Icons.filter_alt_off_rounded),
-                              ),
-                            ],
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: IconButton(
+                              tooltip: 'Limpar filtros',
+                              onPressed: () {
+                                _filtroClienteController.clear();
+                                _aplicarFiltros();
+                              },
+                              icon: const Icon(Icons.filter_alt_off_rounded),
+                            ),
                           ),
                         ],
                       ),
@@ -3397,20 +3357,7 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
                           Text('Estimativa: ${dados['estimativaFormatada'] ?? 'Não calculada'}'),
                           Text('Margem aplicada: ${(dados['margemPercentual'] ?? 0).toString()}%'),
                           Text('Margem mínima: ${(dados['margemMinimaPercentual'] ?? 0).toString()}%'),
-                          const SizedBox(height: 8),
-                          if ((dados['itensOrcamento'] as List?)?.isNotEmpty == true) ...[
-                            const Text('Itens finais do orçamento', style: TextStyle(fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            ...(dados['itensOrcamento'] as List)
-                                .whereType<Map>()
-                                .map((item) => Map<String, dynamic>.from(item))
-                                .map(
-                                  (item) => Text(
-                                    '• ${item['descricao'] ?? 'Sem descrição'}: R\$ ${(item['valor'] ?? 0).toString()}',
-                                  ),
-                                ),
-                            const SizedBox(height: 8),
-                          ],
+
                           if (registro['erroEnvio'] != null) ...[
                             Text(
                               'Último erro de envio: ${registro['erroEnvio']}',
