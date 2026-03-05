@@ -1843,7 +1843,7 @@ class _PerguntaScreenState extends State<PerguntaScreen> {
 }
 
 
-class ResultadoScreen extends StatelessWidget {
+class ResultadoScreen extends StatefulWidget {
 // ... (código existente da classe ResultadoScreen)
   final Map<String, String> respostasIniciais;
   final Map<String, String> respostasQuestionario;
@@ -1855,12 +1855,35 @@ class ResultadoScreen extends StatelessWidget {
     required this.respostasIniciais,
     required this.respostasQuestionario,
     required this.precos,
-    required this.logs
+    required this.logs,
   });
+
+  @override
+  State<ResultadoScreen> createState() => _ResultadoScreenState();
+}
+
+class _ResultadoScreenState extends State<ResultadoScreen> {
+  OrcamentoConfiguracao? _orcamentoConfig;
+  bool _relatorioSalvo = false;
+
+  List<OrcamentoItem> _itensPadrao() {
+    return widget.respostasQuestionario.values
+        .map((resposta) => OrcamentoItem(
+              descricao: resposta,
+              valor: widget.precos[resposta] ?? 0.0,
+            ))
+        .toList();
+  }
+
+  List<OrcamentoItem> _itensAtuais() {
+    final origem = _orcamentoConfig?.itens ?? _itensPadrao();
+    return origem.map((item) => item.copy()).toList();
+  }
+
+  double get _margemPercentualAtual => _orcamentoConfig?.margemPercentual ?? 15.0;
 
   Future<void> _salvarRelatorioNoFirestore(BuildContext context, String estimativaFormatada) async {
     final limitService = LimitService();
-    // A verificação já foi feita na tela anterior, mas como segurança, verificamos de novo.
     if (!await limitService.podeFazerOrcamento()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1876,19 +1899,25 @@ class ResultadoScreen extends StatelessWidget {
       final user = FirebaseAuth.instance.currentUser;
       final userEmail = user?.email ?? 'Usuário desconhecido';
       const emailDestinatario = "e-mail ocutado";
+      final itens = _itensAtuais();
 
       final dadosParaSalvar = {
         'destinatario': emailDestinatario,
         'orcamentistaEmail': userEmail,
-        'respostasIniciais': respostasIniciais,
-        'respostasQuestionario': respostasQuestionario,
+        'respostasIniciais': widget.respostasIniciais,
+        'respostasQuestionario': widget.respostasQuestionario,
         'estimativaFormatada': estimativaFormatada,
+        'margemPercentual': _margemPercentualAtual,
+        'itensOrcamento': itens
+            .map((item) => {
+                  'descricao': item.descricao,
+                  'valor': item.valor,
+                })
+            .toList(),
         'criadoEm': FieldValue.serverTimestamp(),
       };
 
       await firestore.collection('relatorios').add(dadosParaSalvar);
-
-      // Registra o orçamento apenas após o sucesso do envio
       await limitService.registrarOrcamento();
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1897,7 +1926,7 @@ class ResultadoScreen extends StatelessWidget {
           backgroundColor: Colors.green,
         ),
       );
-
+      _relatorioSalvo = true;
     } catch (e) {
       String errorMessage = 'Ocorreu um erro inesperado: $e';
       if (e is FirebaseException && e.code == 'permission-denied') {
@@ -1921,12 +1950,12 @@ class ResultadoScreen extends StatelessWidget {
           content: SizedBox(
             width: double.maxFinite,
             child: ListView.builder(
-              itemCount: logs.length,
+              itemCount: widget.logs.length,
               itemBuilder: (context, index) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2.0),
                   child: Text(
-                    logs[index],
+                    widget.logs[index],
                     style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
                   ),
                 );
@@ -1949,43 +1978,43 @@ class ResultadoScreen extends StatelessWidget {
   void _promptSenhaLog(BuildContext context) {
     final controller = TextEditingController();
     showDialog(
-        context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            title: const Text('Acesso Restrito'),
-            content: TextFormField(
-              controller: controller,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Senha',
-                border: OutlineInputBorder(),
-              ),
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Acesso Restrito'),
+          content: TextFormField(
+            controller: controller,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Senha',
+              border: OutlineInputBorder(),
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('CANCELAR')),
-              ElevatedButton(
-                  onPressed: () {
-                    if (controller.text == 'log') {
-                      Navigator.of(dialogContext).pop();
-                      _showLogDialog(context);
-                    } else {
-                      Navigator.of(dialogContext).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Senha incorreta.'), backgroundColor: Colors.red)
-                      );
-                    }
-                  },
-                  child: const Text('ACESSAR')
-              ),
-            ],
-          );
-        }
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('CANCELAR')),
+            ElevatedButton(
+              onPressed: () {
+                if (controller.text == 'log') {
+                  Navigator.of(dialogContext).pop();
+                  _showLogDialog(context);
+                } else {
+                  Navigator.of(dialogContext).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Senha incorreta.'), backgroundColor: Colors.red),
+                  );
+                }
+              },
+              child: const Text('ACESSAR'),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  void _promptSenhaEdicaoOrcamento(BuildContext context) {
+  Future<void> _promptSenhaEdicaoOrcamento(BuildContext context) async {
     final controller = TextEditingController();
-    showDialog(
+    await showDialog(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -2004,19 +2033,8 @@ class ResultadoScreen extends StatelessWidget {
               child: const Text('CANCELAR'),
             ),
             ElevatedButton(
-              onPressed: () {
-                if (controller.text == 'log') {
-                  Navigator.of(dialogContext).pop();
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => DetalheOrcamentoScreen(
-                        respostasQuestionario: respostasQuestionario,
-                        precos: precos,
-                      ),
-                    ),
-                  );
-                } else {
+              onPressed: () async {
+                if (controller.text != 'log') {
                   Navigator.of(dialogContext).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -2024,7 +2042,30 @@ class ResultadoScreen extends StatelessWidget {
                       backgroundColor: Colors.red,
                     ),
                   );
+                  return;
                 }
+
+                Navigator.of(dialogContext).pop();
+                final config = await Navigator.push<OrcamentoConfiguracao>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => DetalheOrcamentoScreen(
+                      respostasQuestionario: widget.respostasQuestionario,
+                      precos: widget.precos,
+                      itensIniciais: _itensAtuais(),
+                      margemPercentualInicial: _margemPercentualAtual,
+                    ),
+                  ),
+                );
+
+                if (!mounted || config == null) {
+                  return;
+                }
+
+                setState(() {
+                  _orcamentoConfig = config;
+                  _relatorioSalvo = false;
+                });
               },
               child: const Text('ACESSAR'),
             ),
@@ -2034,83 +2075,73 @@ class ResultadoScreen extends StatelessWidget {
     );
   }
 
-  //
-  // ✨✨✨ ALTERAÇÃO APLICADA AQUI ✨✨✨
-  //
   Map<String, double> _calcularEstimativa() {
+    final itens = _itensAtuais();
+    final margemPercentual = _margemPercentualAtual;
+
     double somaTotal = 0.0;
-    logs.add('\n🔎 Iniciando Cálculo de Preços...');
+    widget.logs.add('\n🔎 Iniciando Cálculo de Preços...');
 
-    for (final resposta in respostasQuestionario.values) {
-      final chaveBusca = resposta;
-
-      if (precos.containsKey(chaveBusca)) {
-        final precoEncontrado = precos[chaveBusca]!;
-        somaTotal += precoEncontrado;
-        logs.add('✅ Preço para ["$resposta"]: ${NumberFormat.currency(locale: 'pt_BR', symbol: r'R$').format(precoEncontrado)}');
-      } else {
-        logs.add('ℹ️ Item ["$resposta"] não encontrado no mapa de preços.');
-      }
+    for (final item in itens) {
+      somaTotal += item.valor;
+      widget.logs.add('✅ Item ["${item.descricao}"]: ${NumberFormat.currency(locale: 'pt_BR', symbol: r'R$').format(item.valor)}');
     }
-    logs.add('📊 Soma total: ${NumberFormat.currency(locale: 'pt_BR', symbol: r'R$').format(somaTotal)}');
 
-    final valorMinimo = somaTotal * 1.0;
-    final valorMaximo = somaTotal * 1.15;
+    final fatorMargem = 1 + (margemPercentual / 100);
+    final valorMinimo = somaTotal;
+    final valorMaximo = somaTotal * fatorMargem;
 
-    // --- NOVO CÓDIGO ---
-    // Arredonda para o milhar mais próximo, como solicitado.
-    // Ex: 245.139,59 se torna 245.000
-    // Ex: 245.839,59 se torna 246.000
     final double valorMinimoArredondado = (valorMinimo / 1000).round() * 1000.0;
     final double valorMaximoArredondado = (valorMaximo / 1000).round() * 1000.0;
 
-    logs.add('Rounding (Min): $valorMinimo -> $valorMinimoArredondado');
-    logs.add('Rounding (Max): $valorMaximo -> $valorMaximoArredondado');
-    // --- FIM NOVO CÓDIGO ---
+    widget.logs.add('📊 Soma total: ${NumberFormat.currency(locale: 'pt_BR', symbol: r'R$').format(somaTotal)}');
+    widget.logs.add('📈 Margem aplicada: ${margemPercentual.toStringAsFixed(1)}%');
 
-    // Retorna os valores arredondados
-    return {'min': valorMinimoArredondado, 'max': valorMaximoArredondado};
+    return {
+      'subtotal': somaTotal,
+      'margemPercentual': margemPercentual,
+      'min': valorMinimoArredondado,
+      'max': valorMaximoArredondado,
+    };
   }
-  //
-  // ✨✨✨ FIM DA ALTERAÇÃO ✨✨✨
-  //
 
   pw.Widget _buildAnswersSection(String title, Map<String, String> answers, pw.Font boldFont, pw.Font regularFont) {
-    return pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(title, style: pw.TextStyle(font: boldFont, fontSize: 18)),
-          pw.SizedBox(height: 10),
-          pw.Container(
-              padding: const pw.EdgeInsets.all(10),
-              decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey300),
-                  borderRadius: pw.BorderRadius.circular(5)
-              ),
-              child: pw.Column(
-                  children: answers.entries.map((entry) {
-                    return pw.Padding(
-                        padding: const pw.EdgeInsets.symmetric(vertical: 4),
-                        child: pw.Row(
-                            crossAxisAlignment: pw.CrossAxisAlignment.start,
-                            children: [
-                              pw.Expanded(
-                                  flex: 2,
-                                  child: pw.Text('${entry.key}:', style: pw.TextStyle(font: boldFont))
-                              ),
-                              pw.SizedBox(width: 8),
-                              pw.Expanded(
-                                  flex: 3,
-                                  child: pw.Text(entry.value, style: pw.TextStyle(font: regularFont))
-                              ),
-                            ]
-                        )
-                    );
-                  }).toList()
-              )
-          ),
-        ]
-    );
+    return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+      pw.Text(title, style: pw.TextStyle(font: boldFont, fontSize: 18)),
+      pw.SizedBox(height: 10),
+      pw.Container(
+        padding: const pw.EdgeInsets.all(10),
+        decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey300), borderRadius: pw.BorderRadius.circular(5)),
+        child: pw.Column(
+          children: answers.entries.map((entry) {
+            return pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 4),
+              child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                pw.Expanded(flex: 2, child: pw.Text('${entry.key}:', style: pw.TextStyle(font: boldFont))),
+                pw.SizedBox(width: 8),
+                pw.Expanded(flex: 3, child: pw.Text(entry.value, style: pw.TextStyle(font: regularFont))),
+              ]),
+            );
+          }).toList(),
+        ),
+      ),
+    ]);
+  }
+
+  pw.Widget _buildItensOrcamentoSection(List<OrcamentoItem> itens, NumberFormat currencyFormat, pw.Font boldFont, pw.Font font) {
+    return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+      pw.Text('Itens do Orçamento', style: pw.TextStyle(font: boldFont, fontSize: 18)),
+      pw.SizedBox(height: 8),
+      ...itens.map(
+        (item) => pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 2),
+          child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+            pw.Expanded(child: pw.Text(item.descricao, style: pw.TextStyle(font: font, fontSize: 11))),
+            pw.Text(currencyFormat.format(item.valor), style: pw.TextStyle(font: font, fontSize: 11)),
+          ]),
+        ),
+      ),
+    ]);
   }
 
   Future<Uint8List> _generatePdfReport(PdfPageFormat format) async {
@@ -2122,6 +2153,7 @@ class ResultadoScreen extends StatelessWidget {
     final logoBytes = logoData.buffer.asUint8List();
     final logoImage = pw.MemoryImage(logoBytes);
 
+    final itens = _itensAtuais();
     final estimativa = _calcularEstimativa();
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
     final estimativaFormatada =
@@ -2158,10 +2190,14 @@ class ResultadoScreen extends StatelessWidget {
           );
         },
         build: (pw.Context context) => [
-          _buildAnswersSection('Informações do Cliente', respostasIniciais, boldFont, font),
+          _buildAnswersSection('Informações do Cliente', widget.respostasIniciais, boldFont, font),
           pw.SizedBox(height: 20),
+          _buildItensOrcamentoSection(itens, currencyFormat, boldFont, font),
+          pw.SizedBox(height: 12),
           pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
           pw.SizedBox(height: 8),
+          pw.Text('Subtotal: ${currencyFormat.format(estimativa['subtotal'])}', style: pw.TextStyle(font: font, fontSize: 12)),
+          pw.Text('Margem aplicada: ${_margemPercentualAtual.toStringAsFixed(1)}%', style: pw.TextStyle(font: font, fontSize: 12)),
           pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
           pw.SizedBox(height: 8),
           pw.Text(
@@ -2169,7 +2205,7 @@ class ResultadoScreen extends StatelessWidget {
             style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey800),
           ),
           pw.SizedBox(height: 20),
-          _buildAnswersSection('Respostas do Diagnóstico', respostasQuestionario, boldFont, font),
+          _buildAnswersSection('Respostas do Diagnóstico', widget.respostasQuestionario, boldFont, font),
         ],
         footer: (pw.Context context) {
           return pw.Footer(
@@ -2186,15 +2222,21 @@ class ResultadoScreen extends StatelessWidget {
     return doc.save();
   }
 
-
   Future<void> _shareReport(BuildContext context) async {
     try {
+      final estimativa = _calcularEstimativa();
+      final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
+      final estimativaFormatada =
+          '${currencyFormat.format(estimativa['min'])} ~ ${currencyFormat.format(estimativa['max'])}';
+
+      if (!_relatorioSalvo) {
+        await _salvarRelatorioNoFirestore(context, estimativaFormatada);
+      }
+
       final pdfBytes = await _generatePdfReport(PdfPageFormat.a4);
-      await Printing.sharePdf(
-          bytes: pdfBytes, filename: 'relatorio_perguntas.pdf');
+      await Printing.sharePdf(bytes: pdfBytes, filename: 'relatorio_perguntas.pdf');
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erro ao gerar ou partilhar PDF: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao gerar ou partilhar PDF: $e')));
     }
   }
 
@@ -2225,7 +2267,7 @@ class ResultadoScreen extends StatelessWidget {
     void reiniciarTudo() {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const PerguntasLivresScreen()),
-            (Route<dynamic> route) => false,
+        (Route<dynamic> route) => false,
       );
     }
 
@@ -2260,8 +2302,6 @@ class ResultadoScreen extends StatelessWidget {
     final estimativaFormatada =
         '${currencyFormat.format(estimativa['min'])} ~ ${currencyFormat.format(estimativa['max'])}';
 
-    Future.microtask(() => _salvarRelatorioNoFirestore(context, estimativaFormatada));
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Resultado Final'),
@@ -2271,11 +2311,10 @@ class ResultadoScreen extends StatelessWidget {
             tooltip: 'Sair',
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
-              // Adicionado para garantir que o contexto é válido antes de navegar
               if (context.mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (context) => const AuthGate()),
-                      (Route<dynamic> route) => false,
+                  (Route<dynamic> route) => false,
                 );
               }
             },
@@ -2285,9 +2324,6 @@ class ResultadoScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          //
-          // ✨✨✨ ALTERAÇÃO APLICADA AQUI ✨✨✨
-          //
           GestureDetector(
             onDoubleTap: () {
               _promptSenhaEdicaoOrcamento(context);
@@ -2310,7 +2346,7 @@ class ResultadoScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '(valor baseado apenas nas peças selecionadas)',
+                      '(margem atual: ${_margemPercentualAtual.toStringAsFixed(1)}%)',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white60),
                     ),
                   ],
@@ -2318,34 +2354,35 @@ class ResultadoScreen extends StatelessWidget {
               ),
             ),
           ),
-          //
-          // ✨✨✨ FIM DA ALTERAÇÃO ✨✨✨
-          //
           const SizedBox(height: 16),
           _buildSectionCard(
             context,
             title: 'Informações do Atendimento',
             icon: Icons.receipt_long,
-            children: respostasIniciais.entries.map(
+            children: widget.respostasIniciais.entries
+                .map(
                   (e) => ListTile(
-                dense: true,
-                title: Text(e.key),
-                subtitle: Text(e.value, style: const TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ).toList(),
+                    dense: true,
+                    title: Text(e.key),
+                    subtitle: Text(e.value, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                )
+                .toList(),
           ),
           const SizedBox(height: 16),
           _buildSectionCard(
             context,
             title: 'Respostas do Diagnóstico',
             icon: Icons.checklist_rtl,
-            children: respostasQuestionario.entries.map(
+            children: widget.respostasQuestionario.entries
+                .map(
                   (e) => ListTile(
-                dense: true,
-                title: Text(e.key),
-                subtitle: Text(e.value, style: const TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ).toList(),
+                    dense: true,
+                    title: Text(e.key),
+                    subtitle: Text(e.value, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                )
+                .toList(),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
@@ -2388,16 +2425,29 @@ class OrcamentoItem {
   double valor;
 
   OrcamentoItem({required this.descricao, required this.valor});
+
+  OrcamentoItem copy() => OrcamentoItem(descricao: descricao, valor: valor);
+}
+
+class OrcamentoConfiguracao {
+  final List<OrcamentoItem> itens;
+  final double margemPercentual;
+
+  OrcamentoConfiguracao({required this.itens, required this.margemPercentual});
 }
 
 class DetalheOrcamentoScreen extends StatefulWidget {
   final Map<String, String> respostasQuestionario;
   final Map<String, double> precos;
+  final List<OrcamentoItem> itensIniciais;
+  final double margemPercentualInicial;
 
   const DetalheOrcamentoScreen({
     super.key,
     required this.respostasQuestionario,
     required this.precos,
+    required this.itensIniciais,
+    required this.margemPercentualInicial,
   });
 
   @override
@@ -2406,18 +2456,13 @@ class DetalheOrcamentoScreen extends StatefulWidget {
 
 class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
   final List<OrcamentoItem> _itens = [];
+  late double _margemPercentual;
 
   @override
   void initState() {
     super.initState();
-    for (final resposta in widget.respostasQuestionario.values) {
-      _itens.add(
-        OrcamentoItem(
-          descricao: resposta,
-          valor: widget.precos[resposta] ?? 0.0,
-        ),
-      );
-    }
+    _itens.addAll(widget.itensIniciais.map((item) => item.copy()));
+    _margemPercentual = widget.margemPercentualInicial;
   }
 
   double _parseValor(String input) {
@@ -2538,7 +2583,6 @@ class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
     double somaTotal = 0.0;
     final List<Widget> itensWidgets = [];
 
-    // 1. Criar lista de widgets para cada item e calcular a soma
     for (int i = 0; i < _itens.length; i++) {
       final item = _itens[i];
       somaTotal += item.valor;
@@ -2571,9 +2615,9 @@ class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
       );
     }
 
-    // 2. Calcular valores min/max (brutos e arredondados)
-    final valorMinimoBruto = somaTotal * 1.0;
-    final valorMaximoBruto = somaTotal * 1.15;
+    final fatorMargem = 1 + (_margemPercentual / 100);
+    final valorMinimoBruto = somaTotal;
+    final valorMaximoBruto = somaTotal * fatorMargem;
     final valorMinimoArredondado = (valorMinimoBruto / 1000).round() * 1000.0;
     final valorMaximoArredondado = (valorMaximoBruto / 1000).round() * 1000.0;
 
@@ -2598,9 +2642,35 @@ class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
           const SizedBox(height: 8),
           Card(
             child: Column(
-              children: itensWidgets.isEmpty
-                  ? [const ListTile(title: Text('Nenhum item selecionado.'))]
-                  : itensWidgets,
+              children: itensWidgets.isEmpty ? [const ListTile(title: Text('Nenhum item selecionado.'))] : itensWidgets,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Margem de Lucro',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text('Margem aplicada ao valor máximo'),
+                  trailing: Text('${_margemPercentual.toStringAsFixed(1)}%'),
+                ),
+                Slider(
+                  min: 0,
+                  max: 50,
+                  divisions: 100,
+                  value: _margemPercentual,
+                  label: '${_margemPercentual.toStringAsFixed(1)}%',
+                  onChanged: (novoValor) {
+                    setState(() {
+                      _margemPercentual = novoValor;
+                    });
+                  },
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
@@ -2622,8 +2692,8 @@ class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
                   trailing: Text(currencyFormat.format(valorMinimoBruto)),
                 ),
                 ListTile(
-                  title: const Text('Valor Máximo (+15%)'),
-                  subtitle: const Text('Subtotal x 1.15'),
+                  title: Text('Valor Máximo (+${_margemPercentual.toStringAsFixed(1)}%)'),
+                  subtitle: const Text('Subtotal x (1 + margem)'),
                   trailing: Text(currencyFormat.format(valorMaximoBruto)),
                 ),
                 const Divider(height: 20, thickness: 1, indent: 16, endIndent: 16),
@@ -2637,9 +2707,21 @@ class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop(
+                OrcamentoConfiguracao(
+                  itens: _itens.map((item) => item.copy()).toList(),
+                  margemPercentual: _margemPercentual,
+                ),
+              );
+            },
+            icon: const Icon(Icons.save_outlined),
+            label: const Text('SALVAR ALTERAÇÕES DESTE ORÇAMENTO'),
+          ),
         ],
       ),
     );
   }
-
 }
