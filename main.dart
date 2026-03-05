@@ -42,6 +42,102 @@ class InfoItem {
   InfoItem({required this.descricao, this.imagemLocal});
 }
 
+class HistoricoOrcamentosService {
+  Future<File> _getHistoricoFile() async {
+    final directory = await getApplicationDocumentsDirectory();
+    return File('${directory.path}/historico_orcamentos.json');
+  }
+
+  Future<List<Map<String, dynamic>>> carregarHistorico() async {
+    final file = await _getHistoricoFile();
+    if (!await file.exists()) {
+      return [];
+    }
+
+    final conteudo = await file.readAsString();
+    if (conteudo.trim().isEmpty) {
+      return [];
+    }
+
+    final data = json.decode(conteudo);
+    if (data is! List) {
+      return [];
+    }
+
+    return data
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  Future<void> _salvarHistorico(List<Map<String, dynamic>> registros) async {
+    final file = await _getHistoricoFile();
+    await file.writeAsString(json.encode(registros));
+  }
+
+  Future<String> registrarOrcamento({
+    required Map<String, dynamic> dados,
+    required bool finalizado,
+    required bool enviadoFirebase,
+  }) async {
+    final registros = await carregarHistorico();
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
+    final agora = DateTime.now().toIso8601String();
+
+    registros.insert(0, {
+      'id': id,
+      'criadoEm': agora,
+      'atualizadoEm': agora,
+      'finalizado': finalizado,
+      'enviadoFirebase': enviadoFirebase,
+      'dados': dados,
+    });
+
+    await _salvarHistorico(registros);
+    return id;
+  }
+
+  Future<void> atualizarRegistro({
+    required String id,
+    Map<String, dynamic>? dados,
+    bool? finalizado,
+    bool? enviadoFirebase,
+    String? erroEnvio,
+  }) async {
+    final registros = await carregarHistorico();
+    final index = registros.indexWhere((item) => item['id'] == id);
+    if (index == -1) return;
+
+    final atual = registros[index];
+    if (dados != null) {
+      atual['dados'] = dados;
+    }
+    if (finalizado != null) {
+      atual['finalizado'] = finalizado;
+    }
+    if (enviadoFirebase != null) {
+      atual['enviadoFirebase'] = enviadoFirebase;
+    }
+
+    if (erroEnvio != null && erroEnvio.isNotEmpty) {
+      atual['erroEnvio'] = erroEnvio;
+    } else {
+      atual.remove('erroEnvio');
+    }
+
+    atual['atualizadoEm'] = DateTime.now().toIso8601String();
+    registros[index] = atual;
+    await _salvarHistorico(registros);
+  }
+
+  Future<List<Map<String, dynamic>>> carregarPendentesEnvio() async {
+    final registros = await carregarHistorico();
+    return registros
+        .where((item) => item['enviadoFirebase'] != true)
+        .toList();
+  }
+}
+
 class LimitService {
 // ... (código existente da classe LimitService)
   static const int maxOrcamentos = 25;
@@ -100,6 +196,32 @@ class LimitService {
     await _init();
     return _prefs.getInt('sincronizacoes_feitas') ?? 0;
   }
+}
+
+Future<void> enviarRelatorioParaFirebase({
+  required Map<String, dynamic> dadosRelatorio,
+  required String escopoEmailTexto,
+}) async {
+  final firestore = FirebaseFirestore.instance;
+
+  await firestore.collection('relatorios').add({
+    ...dadosRelatorio,
+    'criadoEm': FieldValue.serverTimestamp(),
+  });
+
+  await firestore.collection('EscopoEmail').add({
+    'to': dadosRelatorio['destinatario'],
+    'orcamentistaEmail': dadosRelatorio['orcamentistaEmail'],
+    'escopoTexto': escopoEmailTexto,
+    'template': {
+      'name': 'relatorioOrcamento',
+      'data': {
+        'orcamentistaEmail': dadosRelatorio['orcamentistaEmail'],
+        'escopoTexto': escopoEmailTexto,
+      }
+    },
+    'criadoEm': FieldValue.serverTimestamp(),
+  });
 }
 
 
@@ -703,6 +825,7 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
   final _formKey = GlobalKey<FormState>();
   final _service = DataService();
   final _limitService = LimitService();
+  final _historicoService = HistoricoOrcamentosService();
   bool _isLoading = true;
   bool _isImporting = false;
   String _limitStatus = '';
@@ -719,7 +842,53 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
 
   Future<void> _carregarDadosIniciais() async {
     await _atualizarStatusLimite();
+    await _sincronizarHistoricoPendentes();
     await _carregarPerguntas();
+  }
+
+  Future<void> _sincronizarHistoricoPendentes() async {
+    final pendentes = await _historicoService.carregarPendentesEnvio();
+    if (pendentes.isEmpty) return;
+
+    int enviados = 0;
+
+    for (final registro in pendentes) {
+      final id = registro['id']?.toString();
+      final dados = registro['dados'];
+      if (id == null || dados is! Map) {
+        continue;
+      }
+
+      final dadosMap = Map<String, dynamic>.from(dados);
+      final escopo = dadosMap['escopoEmailTexto']?.toString() ?? '';
+      if (escopo.isEmpty) {
+        continue;
+      }
+
+      try {
+        await enviarRelatorioParaFirebase(
+          dadosRelatorio: dadosMap,
+          escopoEmailTexto: escopo,
+        );
+        enviados += 1;
+        await _historicoService.atualizarRegistro(
+          id: id,
+          enviadoFirebase: true,
+          erroEnvio: '',
+        );
+      } catch (e) {
+        await _historicoService.atualizarRegistro(
+          id: id,
+          erroEnvio: e.toString(),
+        );
+      }
+    }
+
+    if (mounted && enviados > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$enviados orçamento(s) pendente(s) enviado(s) ao Firebase.')),
+      );
+    }
   }
 
   Future<void> _atualizarStatusLimite() async {
@@ -1005,6 +1174,15 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history_rounded),
+            tooltip: 'Histórico de orçamentos',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HistoricoOrcamentosScreen()),
+              );
+            },
+          ),
           _isImporting
               ? const Padding(padding: EdgeInsets.all(16.0), child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)))
               : IconButton(
@@ -1865,6 +2043,15 @@ class ResultadoScreen extends StatefulWidget {
 class _ResultadoScreenState extends State<ResultadoScreen> {
   OrcamentoConfiguracao? _orcamentoConfig;
   bool _relatorioSalvo = false;
+  final _historicoService = HistoricoOrcamentosService();
+  String? _historicoRegistroId;
+
+
+  @override
+  void initState() {
+    super.initState();
+    _registrarNoHistoricoAoAbrirResultado();
+  }
 
   String _montarEscopoEmail(
       List<OrcamentoItem> itensAtuais,
@@ -1946,6 +2133,45 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
   double get _margemPercentualAtual => _orcamentoConfig?.margemPercentual ?? 15.0;
   double get _margemMinimaPercentualAtual => _orcamentoConfig?.margemMinimaPercentual ?? 0.0;
 
+  Map<String, dynamic> _montarDadosRelatorio(String estimativaFormatada) {
+    final user = FirebaseAuth.instance.currentUser;
+    final userEmail = user?.email ?? 'Usuário desconhecido';
+    const emailDestinatario = 'luis.cappeletti@grupobaw.com.br';
+    final itens = _itensAtuais();
+
+    return {
+      'destinatario': emailDestinatario,
+      'orcamentistaEmail': userEmail,
+      'respostasIniciais': widget.respostasIniciais,
+      'respostasQuestionario': widget.respostasQuestionario,
+      'estimativaFormatada': estimativaFormatada,
+      'margemPercentual': _margemPercentualAtual,
+      'margemMinimaPercentual': _margemMinimaPercentualAtual,
+      'itensOrcamento': itens
+          .map((item) => {
+                'descricao': item.descricao,
+                'valor': item.valor,
+              })
+          .toList(),
+      'escopoEmailTexto': _montarEscopoEmail(itens, estimativaFormatada),
+    };
+  }
+
+  String _estimativaFormatadaAtual() {
+    final estimativa = _calcularEstimativa();
+    final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
+    return '${currencyFormat.format(estimativa['min'])} ~ ${currencyFormat.format(estimativa['max'])}';
+  }
+
+  Future<void> _registrarNoHistoricoAoAbrirResultado() async {
+    final dados = _montarDadosRelatorio(_estimativaFormatadaAtual());
+    _historicoRegistroId = await _historicoService.registrarOrcamento(
+      dados: dados,
+      finalizado: false,
+      enviadoFirebase: false,
+    );
+  }
+
   Future<bool> _salvarRelatorioNoFirestore(BuildContext context, String estimativaFormatada) async {
     final limitService = LimitService();
     if (!await limitService.podeFazerOrcamento()) {
@@ -1959,55 +2185,29 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
     }
 
     try {
-      final firestore = FirebaseFirestore.instance;
-      final user = FirebaseAuth.instance.currentUser;
-      final userEmail = user?.email ?? 'Usuário desconhecido';
-      const emailDestinatario = "luis.cappeletti@grupobaw.com.br";
-      final itens = _itensAtuais();
+      final dadosParaSalvar = _montarDadosRelatorio(estimativaFormatada);
+      _historicoRegistroId ??= await _historicoService.registrarOrcamento(
+        dados: dadosParaSalvar,
+        finalizado: false,
+        enviadoFirebase: false,
+      );
 
-      final dadosParaSalvar = {
-        'destinatario': emailDestinatario,
-        'orcamentistaEmail': userEmail,
-        'respostasIniciais': widget.respostasIniciais,
-        'respostasQuestionario': widget.respostasQuestionario,
-        'estimativaFormatada': estimativaFormatada,
-        'margemPercentual': _margemPercentualAtual,
-        'margemMinimaPercentual': _margemMinimaPercentualAtual,
-        'itensOrcamento': itens
-            .map((item) => {
-          'descricao': item.descricao,
-          'valor': item.valor,
-        })
-            .toList(),
-        'criadoEm': FieldValue.serverTimestamp(),
-      };
-
-      final escopoEmailTexto = _montarEscopoEmail(itens, estimativaFormatada);
-
-      await firestore.collection('relatorios').add({
-        ...dadosParaSalvar
-      });
-
-      await firestore.collection('EscopoEmail').add({
-
-        "to": emailDestinatario,
-
-        "orcamentistaEmail": userEmail,
-        "escopoTexto": escopoEmailTexto,
-
-        "template": {
-          "name": "relatorioOrcamento",
-          "data": {
-            "orcamentistaEmail": userEmail,
-            "escopoTexto": escopoEmailTexto
-          }
-        },
-
-        "criadoEm": FieldValue.serverTimestamp(),
-
-      });
+      await enviarRelatorioParaFirebase(
+        dadosRelatorio: dadosParaSalvar,
+        escopoEmailTexto: dadosParaSalvar['escopoEmailTexto'] as String,
+      );
 
       await limitService.registrarOrcamento();
+
+      if (_historicoRegistroId != null) {
+        await _historicoService.atualizarRegistro(
+          id: _historicoRegistroId!,
+          dados: dadosParaSalvar,
+          finalizado: true,
+          enviadoFirebase: true,
+          erroEnvio: '',
+        );
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2018,6 +2218,15 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       _relatorioSalvo = true;
       return true;
     } catch (e) {
+      if (_historicoRegistroId != null) {
+        await _historicoService.atualizarRegistro(
+          id: _historicoRegistroId!,
+          finalizado: true,
+          enviadoFirebase: false,
+          erroEnvio: e.toString(),
+        );
+      }
+
       String errorMessage = 'Ocorreu um erro inesperado: $e';
       if (e is FirebaseException && e.code == 'permission-denied') {
         errorMessage = 'Permissão negada. Verifique as regras de segurança do Firestore.';
@@ -2158,6 +2367,13 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
                   _orcamentoConfig = config;
                   _relatorioSalvo = false;
                 });
+
+                if (_historicoRegistroId != null) {
+                  await _historicoService.atualizarRegistro(
+                    id: _historicoRegistroId!,
+                    dados: _montarDadosRelatorio(_estimativaFormatadaAtual()),
+                  );
+                }
               },
               child: const Text('ACESSAR'),
             ),
@@ -2899,6 +3115,122 @@ class _DetalheOrcamentoScreenState extends State<DetalheOrcamentoScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class HistoricoOrcamentosScreen extends StatefulWidget {
+  const HistoricoOrcamentosScreen({super.key});
+
+  @override
+  State<HistoricoOrcamentosScreen> createState() => _HistoricoOrcamentosScreenState();
+}
+
+class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
+  final _historicoService = HistoricoOrcamentosService();
+  bool _carregando = true;
+  List<Map<String, dynamic>> _registros = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    final historico = await _historicoService.carregarHistorico();
+    if (!mounted) return;
+    setState(() {
+      _registros = historico;
+      _carregando = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Histórico de Orçamentos')),
+      body: _carregando
+          ? const Center(child: CircularProgressIndicator())
+          : _registros.isEmpty
+              ? const Center(
+                  child: Text('Nenhum orçamento registrado ainda.'),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: _registros.length,
+                  itemBuilder: (context, index) {
+                    final registro = _registros[index];
+                    final dados = registro['dados'] is Map
+                        ? Map<String, dynamic>.from(registro['dados'])
+                        : <String, dynamic>{};
+                    final enviado = registro['enviadoFirebase'] == true;
+                    final finalizado = registro['finalizado'] == true;
+                    final criadoEm = DateTime.tryParse(registro['criadoEm']?.toString() ?? '');
+                    final dataFormatada = criadoEm != null
+                        ? DateFormat('dd/MM/yyyy HH:mm').format(criadoEm)
+                        : 'Data não disponível';
+
+                    return Card(
+                      child: ExpansionTile(
+                        leading: CircleAvatar(
+                          backgroundColor: enviado ? Colors.green.shade100 : Colors.orange.shade100,
+                          child: Icon(
+                            enviado ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+                            color: enviado ? Colors.green.shade700 : Colors.orange.shade700,
+                          ),
+                        ),
+                        title: Text(dados['estimativaFormatada']?.toString() ?? 'Sem estimativa'),
+                        subtitle: Text('Criado em: $dataFormatada'),
+                        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              Chip(
+                                avatar: Icon(
+                                  enviado ? Icons.check_circle : Icons.pending,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                                label: Text(enviado ? 'Enviado ao Firebase' : 'Pendente de envio'),
+                                backgroundColor: enviado ? Colors.green : Colors.orange,
+                                labelStyle: const TextStyle(color: Colors.white),
+                              ),
+                              Chip(
+                                label: Text(finalizado ? 'Finalizado' : 'Não finalizado'),
+                                backgroundColor: finalizado ? Colors.teal.shade100 : Colors.grey.shade300,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Orçamentista: ${dados['orcamentistaEmail'] ?? 'Não informado'}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 4),
+                          Text('Destinatário: ${dados['destinatario'] ?? 'Não informado'}'),
+                          const SizedBox(height: 10),
+                          if ((dados['respostasIniciais'] as Map?)?.isNotEmpty == true) ...[
+                            const Text('Dados iniciais', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            ...(Map<String, dynamic>.from(dados['respostasIniciais'] as Map)).entries.map(
+                              (e) => Text('• ${e.key}: ${e.value}'),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          if (registro['erroEnvio'] != null) ...[
+                            Text(
+                              'Último erro de envio: ${registro['erroEnvio']}',
+                              style: const TextStyle(color: Colors.redAccent),
+                            ),
+                          ]
+                        ],
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }
