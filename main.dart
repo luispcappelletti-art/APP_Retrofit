@@ -79,6 +79,7 @@ class HistoricoOrcamentosService {
     required Map<String, dynamic> dados,
     required bool finalizado,
     required bool enviadoFirebase,
+    bool ignorarSincronizacao = false,
   }) async {
     final registros = await carregarHistorico();
     final id = DateTime.now().microsecondsSinceEpoch.toString();
@@ -90,6 +91,7 @@ class HistoricoOrcamentosService {
       'atualizadoEm': agora,
       'finalizado': finalizado,
       'enviadoFirebase': enviadoFirebase,
+      'ignorarSincronizacao': ignorarSincronizacao,
       'dados': dados,
     });
 
@@ -102,6 +104,7 @@ class HistoricoOrcamentosService {
     Map<String, dynamic>? dados,
     bool? finalizado,
     bool? enviadoFirebase,
+    bool? ignorarSincronizacao,
     String? erroEnvio,
   }) async {
     final registros = await carregarHistorico();
@@ -118,6 +121,9 @@ class HistoricoOrcamentosService {
     if (enviadoFirebase != null) {
       atual['enviadoFirebase'] = enviadoFirebase;
     }
+    if (ignorarSincronizacao != null) {
+      atual['ignorarSincronizacao'] = ignorarSincronizacao;
+    }
 
     if (erroEnvio != null && erroEnvio.isNotEmpty) {
       atual['erroEnvio'] = erroEnvio;
@@ -133,7 +139,7 @@ class HistoricoOrcamentosService {
   Future<List<Map<String, dynamic>>> carregarPendentesEnvio() async {
     final registros = await carregarHistorico();
     return registros
-        .where((item) => item['enviadoFirebase'] != true)
+        .where((item) => item['enviadoFirebase'] != true && item['ignorarSincronizacao'] != true)
         .toList();
   }
 
@@ -840,6 +846,15 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, String?> _respostasDeOpcoes = {};
 
+  bool _isDeveloperMode(Map<String, String> respostasIniciais) {
+    final respostasTextoLivre = _perguntasIniciais
+        .whereType<PerguntaTextoLivre>()
+        .map((p) => respostasIniciais[p.pergunta]?.trim().toLowerCase() ?? '')
+        .toList();
+
+    return respostasTextoLivre.isNotEmpty && respostasTextoLivre.every((resposta) => resposta == 'log');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1013,17 +1028,17 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
     }
   }
 
-  void _navegarParaProximaTela(Map<String, String> respostasIniciais) {
+  void _navegarParaProximaTela(Map<String, String> respostasIniciais, {required bool developerMode}) {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (context) => PerguntaScreen(respostasIniciais: respostasIniciais),
+        builder: (context) => PerguntaScreen(respostasIniciais: respostasIniciais, developerMode: developerMode),
       ),
     );
   }
 
-  void _iniciarFluxoDeInformacoes(List<InfoItem> informacoes, int index, Map<String, String> respostasIniciais) {
+  void _iniciarFluxoDeInformacoes(List<InfoItem> informacoes, int index, Map<String, String> respostasIniciais, {required bool developerMode}) {
     if (index >= informacoes.length) {
-      _navegarParaProximaTela(respostasIniciais);
+      _navegarParaProximaTela(respostasIniciais, developerMode: developerMode);
       return;
     }
 
@@ -1072,14 +1087,14 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _navegarParaProximaTela(respostasIniciais);
+                _navegarParaProximaTela(respostasIniciais, developerMode: developerMode);
               },
               child: const Text('PULAR TODAS'),
             ),
             ElevatedButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _iniciarFluxoDeInformacoes(informacoes, index + 1, respostasIniciais);
+                _iniciarFluxoDeInformacoes(informacoes, index + 1, respostasIniciais, developerMode: developerMode);
               },
               child: const Text('PRÓXIMO'),
             ),
@@ -1101,12 +1116,22 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
         }
       }
 
+      final developerMode = _isDeveloperMode(respostasIniciais);
       final informacoes = await _service.carregarInformacoesIniciais();
       if (mounted) {
+        if (developerMode) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Modo desenvolvedor ativado: limites e vínculos liberados, sem envio ao Firebase.'),
+              backgroundColor: Colors.deepPurple,
+            ),
+          );
+        }
+
         if (informacoes.isNotEmpty) {
-          _iniciarFluxoDeInformacoes(informacoes, 0, respostasIniciais);
+          _iniciarFluxoDeInformacoes(informacoes, 0, respostasIniciais, developerMode: developerMode);
         } else {
-          _navegarParaProximaTela(respostasIniciais);
+          _navegarParaProximaTela(respostasIniciais, developerMode: developerMode);
         }
       }
     }
@@ -1258,8 +1283,9 @@ class OpcaoComVinculo {
 class PerguntaScreen extends StatefulWidget {
 // ... (código existente da classe PerguntaScreen)
   final Map<String, String> respostasIniciais;
+  final bool developerMode;
 
-  const PerguntaScreen({super.key, required this.respostasIniciais});
+  const PerguntaScreen({super.key, required this.respostasIniciais, required this.developerMode});
   @override
   State<PerguntaScreen> createState() => _PerguntaScreenState();
 }
@@ -1439,6 +1465,11 @@ class _PerguntaScreenState extends State<PerguntaScreen> {
     logs.add('📄 Opções padrão (itens.xlsx) para "$perguntaAtual": ${todasAsOpcoes.isEmpty ? '—' : todasAsOpcoes}');
 
     // Se for a primeira pergunta ou não houver respostas anteriores, todas são válidas.
+    if (widget.developerMode) {
+      logs.add('🛠️ Modo desenvolvedor ativo → vínculos ignorados.');
+      return todasAsOpcoes.map((nome) => OpcaoComVinculo(nome: nome, eValida: true)).toList();
+    }
+
     if (perguntaIndex == 0 || respostasQuestionario.isEmpty) {
       logs.add('ℹ️ Primeira pergunta ou sem respostas anteriores → todas as opções são válidas.');
       return todasAsOpcoes.map((nome) => OpcaoComVinculo(nome: nome, eValida: true)).toList();
@@ -1734,7 +1765,7 @@ class _PerguntaScreenState extends State<PerguntaScreen> {
   }
 
   Future<void> _irParaResultado() async {
-    if (!await _limitService.podeFazerOrcamento()) {
+    if (!widget.developerMode && !await _limitService.podeFazerOrcamento()) {
       if (mounted) {
         showDialog(
           context: context,
@@ -1760,6 +1791,7 @@ class _PerguntaScreenState extends State<PerguntaScreen> {
           respostasQuestionario: respostasQuestionario,
           precos: precosMapa,
           logs: logs,
+          developerMode: widget.developerMode,
         ),
       ),
     );
@@ -1878,6 +1910,23 @@ class _PerguntaScreenState extends State<PerguntaScreen> {
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: 22),
           ),
           const SizedBox(height: 24),
+          if (widget.developerMode)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.deepPurple.withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.developer_mode, color: Colors.deepPurple),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('Modo desenvolvedor ativo: opções bloqueadas por vínculo estão liberadas.')),
+                ],
+              ),
+            ),
 
           // Caso 1: A lista de itens para a pergunta está completamente vazia.
           if (opcoesComVinculo.isEmpty)
@@ -2033,6 +2082,7 @@ class ResultadoScreen extends StatefulWidget {
   final Map<String, String> respostasQuestionario;
   final Map<String, double> precos;
   final List<String> logs;
+  final bool developerMode;
 
   const ResultadoScreen({
     super.key,
@@ -2040,6 +2090,7 @@ class ResultadoScreen extends StatefulWidget {
     required this.respostasQuestionario,
     required this.precos,
     required this.logs,
+    required this.developerMode,
   });
 
   @override
@@ -2160,6 +2211,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       })
           .toList(),
       'escopoEmailTexto': _montarEscopoEmail(itens, estimativaFormatada),
+      'developerMode': widget.developerMode,
     };
   }
 
@@ -2175,12 +2227,13 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       dados: dados,
       finalizado: false,
       enviadoFirebase: false,
+      ignorarSincronizacao: widget.developerMode,
     );
   }
 
   Future<bool> _salvarRelatorioNoFirestore(BuildContext context, String estimativaFormatada) async {
     final limitService = LimitService();
-    if (!await limitService.podeFazerOrcamento()) {
+    if (!widget.developerMode && !await limitService.podeFazerOrcamento()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Erro: Limite diário de relatórios atingido.'),
@@ -2196,28 +2249,34 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         dados: dadosParaSalvar,
         finalizado: false,
         enviadoFirebase: false,
+        ignorarSincronizacao: widget.developerMode,
       );
 
-      await enviarRelatorioParaFirebase(
-        dadosRelatorio: dadosParaSalvar,
-        escopoEmailTexto: dadosParaSalvar['escopoEmailTexto'] as String,
-      );
+      if (!widget.developerMode) {
+        await enviarRelatorioParaFirebase(
+          dadosRelatorio: dadosParaSalvar,
+          escopoEmailTexto: dadosParaSalvar['escopoEmailTexto'] as String,
+        );
 
-      await limitService.registrarOrcamento();
+        await limitService.registrarOrcamento();
+      }
 
       if (_historicoRegistroId != null) {
         await _historicoService.atualizarRegistro(
           id: _historicoRegistroId!,
           dados: dadosParaSalvar,
           finalizado: true,
-          enviadoFirebase: true,
+          enviadoFirebase: !widget.developerMode,
+          ignorarSincronizacao: widget.developerMode,
           erroEnvio: '',
         );
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Estimativa gerada'),
+        SnackBar(
+          content: Text(widget.developerMode
+              ? 'Estimativa gerada em modo desenvolvedor (sem envio ao Firebase).'
+              : 'Estimativa gerada'),
           backgroundColor: Colors.green,
         ),
       );
