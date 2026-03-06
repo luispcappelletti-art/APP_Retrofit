@@ -2149,9 +2149,9 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       'margemMinimaPercentual': _margemMinimaPercentualAtual,
       'itensOrcamento': itens
           .map((item) => {
-                'descricao': item.descricao,
-                'valor': item.valor,
-              })
+        'descricao': item.descricao,
+        'valor': item.valor,
+      })
           .toList(),
       'escopoEmailTexto': _montarEscopoEmail(itens, estimativaFormatada),
     };
@@ -3191,9 +3191,9 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
           : <String, dynamic>{};
 
       final bateCliente = termoCliente.isEmpty || respostasIniciais.values.any((resposta) {
-            final valor = resposta.toString().toLowerCase();
-            return valor.contains(termoCliente);
-          });
+        final valor = resposta.toString().toLowerCase();
+        return valor.contains(termoCliente);
+      });
 
       return bateCliente;
     }).toList();
@@ -3210,168 +3210,168 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
       body: _carregando
           ? const Center(child: CircularProgressIndicator())
           : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Filtros',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Filtros',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Autocomplete<String>(
+                      optionsBuilder: (textEditingValue) {
+                        final termo = textEditingValue.text.trim().toLowerCase();
+                        final opcoes = _opcoesFiltroCliente();
+                        if (termo.isEmpty) {
+                          return opcoes;
+                        }
+                        return opcoes.where((opcao) => opcao.toLowerCase().contains(termo));
+                      },
+                      onSelected: (selecionado) {
+                        _filtroClienteController.text = selecionado;
+                        _aplicarFiltros();
+                      },
+                      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                        if (_filtroClienteController.text.isNotEmpty && controller.text != _filtroClienteController.text) {
+                          controller.text = _filtroClienteController.text;
+                          controller.selection = TextSelection.collapsed(offset: controller.text.length);
+                        }
+                        return TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          decoration: const InputDecoration(
+                            labelText: 'Cliente (respostas iniciais)',
+                            hintText: 'Digite para filtrar com preenchimento automático',
+                            prefixIcon: Icon(Icons.person_search_rounded),
+                            border: OutlineInputBorder(),
                           ),
-                          const SizedBox(height: 8),
-                          Autocomplete<String>(
-                            optionsBuilder: (textEditingValue) {
-                              final termo = textEditingValue.text.trim().toLowerCase();
-                              final opcoes = _opcoesFiltroCliente();
-                              if (termo.isEmpty) {
-                                return opcoes;
-                              }
-                              return opcoes.where((opcao) => opcao.toLowerCase().contains(termo));
-                            },
-                            onSelected: (selecionado) {
-                              _filtroClienteController.text = selecionado;
-                              _aplicarFiltros();
-                            },
-                            fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                              if (_filtroClienteController.text.isNotEmpty && controller.text != _filtroClienteController.text) {
-                                controller.text = _filtroClienteController.text;
-                                controller.selection = TextSelection.collapsed(offset: controller.text.length);
-                              }
-                              return TextField(
-                                controller: controller,
-                                focusNode: focusNode,
-                                decoration: const InputDecoration(
-                                  labelText: 'Cliente (respostas iniciais)',
-                                  hintText: 'Digite para filtrar com preenchimento automático',
-                                  prefixIcon: Icon(Icons.person_search_rounded),
-                                  border: OutlineInputBorder(),
-                                ),
-                                onChanged: (valor) {
-                                  _filtroClienteController.text = valor;
-                                  _aplicarFiltros();
-                                },
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: IconButton(
-                              tooltip: 'Limpar filtros',
-                              onPressed: () {
-                                _filtroClienteController.clear();
-                                _aplicarFiltros();
-                              },
-                              icon: const Icon(Icons.filter_alt_off_rounded),
-                            ),
-                          ),
-                        ],
+                          onChanged: (valor) {
+                            _filtroClienteController.text = valor;
+                            _aplicarFiltros();
+                          },
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        tooltip: 'Limpar filtros',
+                        onPressed: () {
+                          _filtroClienteController.clear();
+                          _aplicarFiltros();
+                        },
+                        icon: const Icon(Icons.filter_alt_off_rounded),
                       ),
                     ),
-                  ),
-                ),
-                Expanded(
-                  child: _registros.isEmpty
-                      ? const Center(
-                          child: Text('Nenhum relatório encontrado para os filtros aplicados.'),
-                        )
-                      : ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _registros.length,
-                  itemBuilder: (context, index) {
-                    final registro = _registros[index];
-                    final dados = registro['dados'] is Map
-                        ? Map<String, dynamic>.from(registro['dados'])
-                        : <String, dynamic>{};
-                    final enviado = registro['enviadoFirebase'] == true;
-                    final finalizado = registro['finalizado'] == true;
-                    final criadoEm = DateTime.tryParse(registro['criadoEm']?.toString() ?? '');
-                    final dataFormatada = criadoEm != null
-                        ? DateFormat('dd/MM/yyyy HH:mm').format(criadoEm)
-                        : 'Data não disponível';
-
-                    return Card(
-                      child: ExpansionTile(
-                        leading: CircleAvatar(
-                          backgroundColor: enviado ? Colors.green.shade100 : Colors.orange.shade100,
-                          child: Icon(
-                            enviado ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
-                            color: enviado ? Colors.green.shade700 : Colors.orange.shade700,
-                          ),
-                        ),
-                        title: Text(dados['estimativaFormatada']?.toString() ?? 'Sem estimativa'),
-                        subtitle: Text('Criado em: $dataFormatada'),
-                        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                        children: [
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              Chip(
-                                avatar: Icon(
-                                  enviado ? Icons.check_circle : Icons.pending,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                                label: Text(enviado ? 'Enviado ao Firebase' : 'Pendente de envio'),
-                                backgroundColor: enviado ? Colors.green : Colors.orange,
-                                labelStyle: const TextStyle(color: Colors.white),
-                              ),
-                              Chip(
-                                label: Text(finalizado ? 'Finalizado' : 'Não finalizado'),
-                                backgroundColor: finalizado ? Colors.teal.shade100 : Colors.grey.shade300,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Orçamentista: ${dados['orcamentistaEmail'] ?? 'Não informado'}',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 4),
-                          Text('Destinatário: ${dados['destinatario'] ?? 'Não informado'}'),
-                          const SizedBox(height: 10),
-                          if ((dados['respostasIniciais'] as Map?)?.isNotEmpty == true) ...[
-                            const Text('Dados iniciais', style: TextStyle(fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            ...(Map<String, dynamic>.from(dados['respostasIniciais'] as Map)).entries.map(
-                              (e) => Text('• ${e.key}: ${e.value}'),
-                            ),
-                            const SizedBox(height: 10),
-                          ],
-                          if ((dados['respostasQuestionario'] as Map?)?.isNotEmpty == true) ...[
-                            const Text('Perguntas técnicas respondidas', style: TextStyle(fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            ...(Map<String, dynamic>.from(dados['respostasQuestionario'] as Map)).entries.map(
-                              (e) => Text('• ${e.key}: ${e.value}'),
-                            ),
-                            const SizedBox(height: 10),
-                          ],
-                          const Text('Resultados', style: TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Text('Estimativa: ${dados['estimativaFormatada'] ?? 'Não calculada'}'),
-                          Text('Margem aplicada: ${(dados['margemPercentual'] ?? 0).toString()}%'),
-                          Text('Margem mínima: ${(dados['margemMinimaPercentual'] ?? 0).toString()}%'),
-
-                          if (registro['erroEnvio'] != null) ...[
-                            Text(
-                              'Último erro de envio: ${registro['erroEnvio']}',
-                              style: const TextStyle(color: Colors.redAccent),
-                            ),
-                          ]
-                        ],
-                      ),
-                    );
-                  },
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
+          Expanded(
+            child: _registros.isEmpty
+                ? const Center(
+              child: Text('Nenhum relatório encontrado para os filtros aplicados.'),
+            )
+                : ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: _registros.length,
+              itemBuilder: (context, index) {
+                final registro = _registros[index];
+                final dados = registro['dados'] is Map
+                    ? Map<String, dynamic>.from(registro['dados'])
+                    : <String, dynamic>{};
+                final enviado = registro['enviadoFirebase'] == true;
+                final finalizado = registro['finalizado'] == true;
+                final criadoEm = DateTime.tryParse(registro['criadoEm']?.toString() ?? '');
+                final dataFormatada = criadoEm != null
+                    ? DateFormat('dd/MM/yyyy HH:mm').format(criadoEm)
+                    : 'Data não disponível';
+
+                return Card(
+                  child: ExpansionTile(
+                    leading: CircleAvatar(
+                      backgroundColor: enviado ? Colors.green.shade100 : Colors.orange.shade100,
+                      child: Icon(
+                        enviado ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+                        color: enviado ? Colors.green.shade700 : Colors.orange.shade700,
+                      ),
+                    ),
+                    title: Text(dados['estimativaFormatada']?.toString() ?? 'Sem estimativa'),
+                    subtitle: Text('Criado em: $dataFormatada'),
+                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          Chip(
+                            avatar: Icon(
+                              enviado ? Icons.check_circle : Icons.pending,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                            label: Text(enviado ? 'Enviado ao Firebase' : 'Pendente de envio'),
+                            backgroundColor: enviado ? Colors.green : Colors.orange,
+                            labelStyle: const TextStyle(color: Colors.white),
+                          ),
+                          Chip(
+                            label: Text(finalizado ? 'Finalizado' : 'Não finalizado'),
+                            backgroundColor: finalizado ? Colors.teal.shade100 : Colors.grey.shade300,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Orçamentista: ${dados['orcamentistaEmail'] ?? 'Não informado'}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('Destinatário: ${dados['destinatario'] ?? 'Não informado'}'),
+                      const SizedBox(height: 10),
+                      if ((dados['respostasIniciais'] as Map?)?.isNotEmpty == true) ...[
+                        const Text('Dados iniciais', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        ...(Map<String, dynamic>.from(dados['respostasIniciais'] as Map)).entries.map(
+                              (e) => Text('• ${e.key}: ${e.value}'),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      if ((dados['respostasQuestionario'] as Map?)?.isNotEmpty == true) ...[
+                        const Text('Perguntas técnicas respondidas', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        ...(Map<String, dynamic>.from(dados['respostasQuestionario'] as Map)).entries.map(
+                              (e) => Text('• ${e.key}: ${e.value}'),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      const Text('Resultados', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      Text('Estimativa: ${dados['estimativaFormatada'] ?? 'Não calculada'}'),
+                      Text('Margem aplicada: ${(dados['margemPercentual'] ?? 0).toString()}%'),
+                      Text('Margem mínima: ${(dados['margemMinimaPercentual'] ?? 0).toString()}%'),
+
+                      if (registro['erroEnvio'] != null) ...[
+                        Text(
+                          'Último erro de envio: ${registro['erroEnvio']}',
+                          style: const TextStyle(color: Colors.redAccent),
+                        ),
+                      ]
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
