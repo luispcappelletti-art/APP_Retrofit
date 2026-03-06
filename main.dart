@@ -845,6 +845,7 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
   List<PerguntaInicial> _perguntasIniciais = [];
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, String?> _respostasDeOpcoes = {};
+  bool _developerVinculosAtivos = false;
 
   bool _isDeveloperMode(Map<String, String> respostasIniciais) {
     final respostasTextoLivre = _perguntasIniciais
@@ -853,6 +854,14 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
         .toList();
 
     return respostasTextoLivre.isNotEmpty && respostasTextoLivre.every((resposta) => resposta == 'log');
+  }
+
+  bool _isDeveloperModePelosCamposAtuais() {
+    final respostasAtuais = <String, String>{};
+    for (final p in _perguntasIniciais.whereType<PerguntaTextoLivre>()) {
+      respostasAtuais[p.pergunta] = _controllers[p.pergunta]?.text.trim() ?? '';
+    }
+    return _isDeveloperMode(respostasAtuais);
   }
 
   @override
@@ -1031,7 +1040,11 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
   void _navegarParaProximaTela(Map<String, String> respostasIniciais, {required bool developerMode}) {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (context) => PerguntaScreen(respostasIniciais: respostasIniciais, developerMode: developerMode),
+        builder: (context) => PerguntaScreen(
+          respostasIniciais: respostasIniciais,
+          developerMode: developerMode,
+          developerVinculosAtivos: _developerVinculosAtivos,
+        ),
       ),
     );
   }
@@ -1149,6 +1162,7 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
     if (pergunta is PerguntaTextoLivre) {
       return TextFormField(
         controller: _controllers[pergunta.pergunta],
+        onChanged: (_) => setState(() {}),
         decoration: InputDecoration(
           labelText: pergunta.pergunta,
           border: const OutlineInputBorder(),
@@ -1161,29 +1175,28 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
         },
       );
     } else if (pergunta is PerguntaComOpcoes) {
-      const valorPular = '__PULAR_RESPOSTA__';
       return DropdownButtonFormField<String>(
         value: _respostasDeOpcoes[pergunta.pergunta],
         decoration: InputDecoration(
           labelText: pergunta.pergunta,
           border: const OutlineInputBorder(),
         ),
-        items: [
-          const DropdownMenuItem<String>(
-            value: valorPular,
-            child: Text('Pular (sem responder)'),
-          ),
-          ...pergunta.opcoes.map((opcao) {
-            return DropdownMenuItem<String>(
-              value: opcao,
-              child: Text(opcao),
-            );
-          }),
-        ],
+        items: pergunta.opcoes.map((opcao) {
+          return DropdownMenuItem<String>(
+            value: opcao,
+            child: Text(opcao),
+          );
+        }).toList(),
         onChanged: (String? newValue) {
           setState(() {
-            _respostasDeOpcoes[pergunta.pergunta] = newValue == valorPular ? '' : newValue;
+            _respostasDeOpcoes[pergunta.pergunta] = newValue;
           });
+        },
+        validator: (value) {
+          if (value == null || value.trim().isEmpty) {
+            return 'Selecione uma opção.';
+          }
+          return null;
         },
       );
     }
@@ -1253,6 +1266,22 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
                 child: _buildCampoPergunta(pergunta),
               );
             }).toList(),
+            if (_isDeveloperModePelosCamposAtuais())
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Ativar vínculos no modo desenvolvedor'),
+                subtitle: Text(
+                  _developerVinculosAtivos
+                      ? 'Ligado: funciona como modo normal, limitando opções.'
+                      : 'Desligado: mantém o comportamento atual com vínculos liberados.',
+                ),
+                value: _developerVinculosAtivos,
+                onChanged: (value) {
+                  setState(() {
+                    _developerVinculosAtivos = value;
+                  });
+                },
+              ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               icon: const Icon(Icons.arrow_forward),
@@ -1285,8 +1314,14 @@ class PerguntaScreen extends StatefulWidget {
 // ... (código existente da classe PerguntaScreen)
   final Map<String, String> respostasIniciais;
   final bool developerMode;
+  final bool developerVinculosAtivos;
 
-  const PerguntaScreen({super.key, required this.respostasIniciais, required this.developerMode});
+  const PerguntaScreen({
+    super.key,
+    required this.respostasIniciais,
+    required this.developerMode,
+    required this.developerVinculosAtivos,
+  });
   @override
   State<PerguntaScreen> createState() => _PerguntaScreenState();
 }
@@ -1466,8 +1501,8 @@ class _PerguntaScreenState extends State<PerguntaScreen> {
     logs.add('📄 Opções padrão (itens.xlsx) para "$perguntaAtual": ${todasAsOpcoes.isEmpty ? '—' : todasAsOpcoes}');
 
     // Se for a primeira pergunta ou não houver respostas anteriores, todas são válidas.
-    if (widget.developerMode) {
-      logs.add('🛠️ Modo desenvolvedor ativo → vínculos ignorados.');
+    if (widget.developerMode && !widget.developerVinculosAtivos) {
+      logs.add('🛠️ Modo desenvolvedor ativo (vínculos desativados) → vínculos ignorados.');
       return todasAsOpcoes.map((nome) => OpcaoComVinculo(nome: nome, eValida: true)).toList();
     }
 
