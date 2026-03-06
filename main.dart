@@ -136,6 +136,12 @@ class HistoricoOrcamentosService {
         .where((item) => item['enviadoFirebase'] != true)
         .toList();
   }
+
+  Future<void> removerRegistro(String id) async {
+    final registros = await carregarHistorico();
+    registros.removeWhere((item) => item['id'] == id);
+    await _salvarHistorico(registros);
+  }
 }
 
 class LimitService {
@@ -3129,9 +3135,250 @@ class HistoricoOrcamentosScreen extends StatefulWidget {
 class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
   final _historicoService = HistoricoOrcamentosService();
   final TextEditingController _filtroClienteController = TextEditingController();
+  static const String _senhaEdicao = 'log';
   bool _carregando = true;
   List<Map<String, dynamic>> _todosRegistros = [];
   List<Map<String, dynamic>> _registros = [];
+
+  Map<String, String> _mapString(dynamic origem) {
+    if (origem is! Map) return <String, String>{};
+    return Map<String, dynamic>.from(origem).map(
+      (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
+    );
+  }
+
+  String _buscarRespostaChave(Map<String, String> respostas, List<String> palavras) {
+    for (final entrada in respostas.entries) {
+      final chave = entrada.key.toLowerCase();
+      if (palavras.any((palavra) => chave.contains(palavra))) {
+        final valor = entrada.value.trim();
+        if (valor.isNotEmpty) return valor;
+      }
+    }
+    return '';
+  }
+
+  String _nomeCliente(Map<String, String> respostas) {
+    final nome = _buscarRespostaChave(respostas, ['nome', 'cliente']);
+    if (nome.isNotEmpty) return nome;
+    return respostas.values.firstWhere((valor) => valor.trim().isNotEmpty, orElse: () => 'Cliente não informado');
+  }
+
+  String _contatoCliente(Map<String, String> respostas) {
+    final contato = _buscarRespostaChave(respostas, ['contato', 'telefone', 'celular', 'whatsapp', 'email']);
+    return contato.isEmpty ? 'Contato não informado' : contato;
+  }
+
+  List<OrcamentoItem> _itensDoRegistro(Map<String, dynamic> dados) {
+    final itens = <OrcamentoItem>[];
+    final origem = dados['itensOrcamento'];
+
+    if (origem is List) {
+      for (final item in origem) {
+        if (item is! Map) continue;
+        final map = Map<String, dynamic>.from(item);
+        final descricao = map['descricao']?.toString() ?? 'Item sem descrição';
+        final valor = (map['valor'] as num?)?.toDouble() ?? 0.0;
+        itens.add(OrcamentoItem(descricao: descricao, valor: valor));
+      }
+    }
+
+    return itens;
+  }
+
+  String _estimativaFormatada(List<OrcamentoItem> itens, double margemMinima, double margemMaxima) {
+    final subtotal = itens.fold<double>(0.0, (acc, item) => acc + item.valor);
+    final valorMinimoBruto = subtotal * (1 + (margemMinima / 100));
+    final valorMaximoBruto = subtotal * (1 + (margemMaxima / 100));
+    final valorMinimoArredondado = (valorMinimoBruto / 1000).round() * 1000.0;
+    final valorMaximoArredondado = (valorMaximoBruto / 1000).round() * 1000.0;
+    final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
+    return '${currencyFormat.format(valorMinimoArredondado)} ~ ${currencyFormat.format(valorMaximoArredondado)}';
+  }
+
+  Future<Uint8List> _gerarPdfRegistro(Map<String, dynamic> registro) async {
+    final dados = registro['dados'] is Map
+        ? Map<String, dynamic>.from(registro['dados'])
+        : <String, dynamic>{};
+    final respostasIniciais = _mapString(dados['respostasIniciais']);
+    final respostasQuestionario = _mapString(dados['respostasQuestionario']);
+    final itens = _itensDoRegistro(dados);
+
+    final doc = pw.Document();
+    pw.Font font;
+    pw.Font boldFont;
+    try {
+      font = await PdfGoogleFonts.robotoRegular();
+      boldFont = await PdfGoogleFonts.robotoBold();
+    } catch (_) {
+      font = pw.Font.helvetica();
+      boldFont = pw.Font.helveticaBold();
+    }
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        build: (context) => [
+          pw.Text('RESUMO DO ORÇAMENTO (HISTÓRICO)', style: pw.TextStyle(font: boldFont, fontSize: 18)),
+          pw.SizedBox(height: 8),
+          pw.Text('Cliente: ${_nomeCliente(respostasIniciais)}', style: pw.TextStyle(font: font, fontSize: 11)),
+          pw.Text('Contato: ${_contatoCliente(respostasIniciais)}', style: pw.TextStyle(font: font, fontSize: 11)),
+          pw.SizedBox(height: 12),
+          pw.Text('Dados iniciais', style: pw.TextStyle(font: boldFont, fontSize: 14)),
+          ...respostasIniciais.entries.map((e) => pw.Text('• ${e.key}: ${e.value}', style: pw.TextStyle(font: font, fontSize: 10))),
+          pw.SizedBox(height: 12),
+          pw.Text('Itens do orçamento', style: pw.TextStyle(font: boldFont, fontSize: 14)),
+          ...itens.map((item) => pw.Text('• ${item.descricao}: R\$ ${item.valor.toStringAsFixed(2)}', style: pw.TextStyle(font: font, fontSize: 10))),
+          pw.SizedBox(height: 12),
+          pw.Text('Estimativa: ${dados['estimativaFormatada'] ?? 'Não calculada'}', style: pw.TextStyle(font: boldFont, fontSize: 12)),
+          pw.Text('Margem máxima: ${(dados['margemPercentual'] ?? 0).toString()}%', style: pw.TextStyle(font: font, fontSize: 10)),
+          pw.Text('Margem mínima: ${(dados['margemMinimaPercentual'] ?? 0).toString()}%', style: pw.TextStyle(font: font, fontSize: 10)),
+          pw.SizedBox(height: 12),
+          pw.Text('Perguntas técnicas', style: pw.TextStyle(font: boldFont, fontSize: 14)),
+          ...respostasQuestionario.entries.map((e) => pw.Text('• ${e.key}: ${e.value}', style: pw.TextStyle(font: font, fontSize: 10))),
+        ],
+      ),
+    );
+
+    return doc.save();
+  }
+
+  Future<void> _compartilharPdfRegistro(Map<String, dynamic> registro) async {
+    try {
+      final pdfBytes = await _gerarPdfRegistro(registro);
+      await Printing.sharePdf(
+        bytes: pdfBytes,
+        filename: 'orcamento_historico_${registro['id'] ?? DateTime.now().millisecondsSinceEpoch}.pdf',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PDF gerado com sucesso a partir do histórico.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao gerar PDF: $e')),
+      );
+    }
+  }
+
+  Future<void> _confirmarExclusaoRegistro(Map<String, dynamic> registro) async {
+    final id = registro['id']?.toString();
+    if (id == null) return;
+
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Excluir orçamento local'),
+        content: const Text('Deseja realmente remover este orçamento do histórico local?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('CANCELAR')),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('EXCLUIR'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmou != true) return;
+    await _historicoService.removerRegistro(id);
+    await _carregar();
+  }
+
+  Future<void> _promptSenhaEditarRegistro(Map<String, dynamic> registro) async {
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Acesso Restrito'),
+        content: TextFormField(
+          controller: controller,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: 'Senha para editar orçamento local',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('CANCELAR')),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text != _senhaEdicao) {
+                Navigator.of(dialogContext).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Senha incorreta.'), backgroundColor: Colors.red),
+                );
+                return;
+              }
+
+              Navigator.of(dialogContext).pop();
+              await _editarRegistroLocal(registro);
+            },
+            child: const Text('ACESSAR'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editarRegistroLocal(Map<String, dynamic> registro) async {
+    final id = registro['id']?.toString();
+    if (id == null) return;
+
+    final dados = registro['dados'] is Map
+        ? Map<String, dynamic>.from(registro['dados'])
+        : <String, dynamic>{};
+    final respostasQuestionario = _mapString(dados['respostasQuestionario']);
+    final itensAtuais = _itensDoRegistro(dados);
+
+    final itensIniciais = itensAtuais.isNotEmpty
+        ? itensAtuais
+        : respostasQuestionario.values
+            .map((resposta) => OrcamentoItem(descricao: resposta, valor: 0.0))
+            .toList();
+
+    final precos = <String, double>{
+      for (final item in itensIniciais) item.descricao: item.valor,
+    };
+
+    final config = await Navigator.push<OrcamentoConfiguracao>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DetalheOrcamentoScreen(
+          respostasQuestionario: respostasQuestionario,
+          precos: precos,
+          itensIniciais: itensIniciais,
+          margemPercentualInicial: (dados['margemPercentual'] as num?)?.toDouble() ?? 15,
+          margemMinimaPercentualInicial: (dados['margemMinimaPercentual'] as num?)?.toDouble() ?? 0,
+        ),
+      ),
+    );
+
+    if (!mounted || config == null) return;
+
+    final novosDados = Map<String, dynamic>.from(dados);
+    novosDados['itensOrcamento'] = config.itens
+        .map((item) => {'descricao': item.descricao, 'valor': item.valor})
+        .toList();
+    novosDados['margemPercentual'] = config.margemPercentual;
+    novosDados['margemMinimaPercentual'] = config.margemMinimaPercentual;
+    novosDados['estimativaFormatada'] = _estimativaFormatada(
+      config.itens,
+      config.margemMinimaPercentual,
+      config.margemPercentual,
+    );
+    novosDados['editadoLocalmente'] = true;
+
+    await _historicoService.atualizarRegistro(id: id, dados: novosDados);
+    await _carregar();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Orçamento editado apenas no histórico local.')),
+    );
+  }
 
   @override
   void initState() {
@@ -3291,6 +3538,9 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
                 final enviado = registro['enviadoFirebase'] == true;
                 final finalizado = registro['finalizado'] == true;
                 final criadoEm = DateTime.tryParse(registro['criadoEm']?.toString() ?? '');
+                final respostasIniciais = _mapString(dados['respostasIniciais']);
+                final nomeCliente = _nomeCliente(respostasIniciais);
+                final contatoCliente = _contatoCliente(respostasIniciais);
                 final dataFormatada = criadoEm != null
                     ? DateFormat('dd/MM/yyyy HH:mm').format(criadoEm)
                     : 'Data não disponível';
@@ -3304,10 +3554,41 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
                         color: enviado ? Colors.green.shade700 : Colors.orange.shade700,
                       ),
                     ),
-                    title: Text(dados['estimativaFormatada']?.toString() ?? 'Sem estimativa'),
-                    subtitle: Text('Criado em: $dataFormatada'),
+                    title: Text(nomeCliente),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Contato: $contatoCliente'),
+                        Text('Estimativa: ${dados['estimativaFormatada']?.toString() ?? 'Sem estimativa'}'),
+                        Text('Criado em: $dataFormatada'),
+                      ],
+                    ),
                     childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     children: [
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () => _compartilharPdfRegistro(registro),
+                            icon: const Icon(Icons.picture_as_pdf_outlined),
+                            label: const Text('Gerar PDF'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () => _promptSenhaEditarRegistro(registro),
+                            icon: const Icon(Icons.edit_note_rounded),
+                            label: const Text('Editar local'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () => _confirmarExclusaoRegistro(registro),
+                            style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text('Excluir'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -3326,29 +3607,69 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
                             label: Text(finalizado ? 'Finalizado' : 'Não finalizado'),
                             backgroundColor: finalizado ? Colors.teal.shade100 : Colors.grey.shade300,
                           ),
+                          if (dados['editadoLocalmente'] == true)
+                            Chip(
+                              label: const Text('Editado localmente'),
+                              backgroundColor: Colors.blue.shade100,
+                            ),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        'Orçamentista: ${dados['orcamentistaEmail'] ?? 'Não informado'}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      Card(
+                        color: Colors.grey.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Orçamentista: ${dados['orcamentistaEmail'] ?? 'Não informado'}',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 4),
+                              Text('Destinatário: ${dados['destinatario'] ?? 'Não informado'}'),
+                            ],
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 4),
-                      Text('Destinatário: ${dados['destinatario'] ?? 'Não informado'}'),
                       const SizedBox(height: 10),
                       if ((dados['respostasIniciais'] as Map?)?.isNotEmpty == true) ...[
                         const Text('Dados iniciais', style: TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 4),
-                        ...(Map<String, dynamic>.from(dados['respostasIniciais'] as Map)).entries.map(
-                              (e) => Text('• ${e.key}: ${e.value}'),
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: Map<String, dynamic>.from(dados['respostasIniciais'] as Map)
+                                  .entries
+                                  .map((e) => Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        child: Text('• ${e.key}: ${e.value}'),
+                                      ))
+                                  .toList(),
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 10),
                       ],
                       if ((dados['respostasQuestionario'] as Map?)?.isNotEmpty == true) ...[
                         const Text('Perguntas técnicas respondidas', style: TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 4),
-                        ...(Map<String, dynamic>.from(dados['respostasQuestionario'] as Map)).entries.map(
-                              (e) => Text('• ${e.key}: ${e.value}'),
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: Map<String, dynamic>.from(dados['respostasQuestionario'] as Map)
+                                  .entries
+                                  .map((e) => Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        child: Text('• ${e.key}: ${e.value}'),
+                                      ))
+                                  .toList(),
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 10),
                       ],
