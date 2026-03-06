@@ -1161,28 +1161,29 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
         },
       );
     } else if (pergunta is PerguntaComOpcoes) {
+      const valorPular = '__PULAR_RESPOSTA__';
       return DropdownButtonFormField<String>(
         value: _respostasDeOpcoes[pergunta.pergunta],
         decoration: InputDecoration(
           labelText: pergunta.pergunta,
           border: const OutlineInputBorder(),
         ),
-        items: pergunta.opcoes.map((opcao) {
-          return DropdownMenuItem<String>(
-            value: opcao,
-            child: Text(opcao),
-          );
-        }).toList(),
+        items: [
+          const DropdownMenuItem<String>(
+            value: valorPular,
+            child: Text('Pular (sem responder)'),
+          ),
+          ...pergunta.opcoes.map((opcao) {
+            return DropdownMenuItem<String>(
+              value: opcao,
+              child: Text(opcao),
+            );
+          }),
+        ],
         onChanged: (String? newValue) {
           setState(() {
-            _respostasDeOpcoes[pergunta.pergunta] = newValue;
+            _respostasDeOpcoes[pergunta.pergunta] = newValue == valorPular ? '' : newValue;
           });
-        },
-        validator: (value) {
-          if (value == null || value.isEmpty) {
-            return 'Por favor, selecione uma opção.';
-          }
-          return null;
         },
       );
     }
@@ -2008,26 +2009,24 @@ class _PerguntaScreenState extends State<PerguntaScreen> {
                     );
                   }).toList(),
                 ),
-
-                // Se, após exibir as opções, nenhuma for válida, mostramos o botão de pular.
-                if (!temAlgumaOpcaoValida) ...[
-                  const SizedBox(height: 32),
-                  ElevatedButton.icon(
-                    onPressed: _pularPergunta,
-                    icon: const Icon(Icons.skip_next_rounded),
-                    label: const Text('AVANÇAR / PULAR PERGUNTA'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.teal,
-                      elevation: 1,
-                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.teal.withOpacity(0.5)),
-                      ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _pularPergunta,
+                  icon: const Icon(Icons.skip_next_rounded),
+                  label: Text(temAlgumaOpcaoValida
+                      ? 'PULAR PERGUNTA'
+                      : 'AVANÇAR / PULAR PERGUNTA'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.teal,
+                    elevation: 1,
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: Colors.teal.withOpacity(0.5)),
                     ),
                   ),
-                ],
+                ),
               ],
             ),
 
@@ -2222,6 +2221,10 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
   }
 
   Future<void> _registrarNoHistoricoAoAbrirResultado() async {
+    if (widget.developerMode) {
+      return;
+    }
+
     final dados = _montarDadosRelatorio(_estimativaFormatadaAtual());
     _historicoRegistroId = await _historicoService.registrarOrcamento(
       dados: dados,
@@ -2232,8 +2235,19 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
   }
 
   Future<bool> _salvarRelatorioNoFirestore(BuildContext context, String estimativaFormatada) async {
+    if (widget.developerMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Estimativa gerada em modo desenvolvedor (sem histórico e sem envio ao Firebase).'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      _relatorioSalvo = true;
+      return true;
+    }
+
     final limitService = LimitService();
-    if (!widget.developerMode && !await limitService.podeFazerOrcamento()) {
+    if (!await limitService.podeFazerOrcamento()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Erro: Limite diário de relatórios atingido.'),
@@ -2252,33 +2266,26 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         ignorarSincronizacao: widget.developerMode,
       );
 
-      if (!widget.developerMode) {
-        await enviarRelatorioParaFirebase(
-          dadosRelatorio: dadosParaSalvar,
-          escopoEmailTexto: dadosParaSalvar['escopoEmailTexto'] as String,
-        );
+      await enviarRelatorioParaFirebase(
+        dadosRelatorio: dadosParaSalvar,
+        escopoEmailTexto: dadosParaSalvar['escopoEmailTexto'] as String,
+      );
 
-        await limitService.registrarOrcamento();
-      }
+      await limitService.registrarOrcamento();
 
       if (_historicoRegistroId != null) {
         await _historicoService.atualizarRegistro(
           id: _historicoRegistroId!,
           dados: dadosParaSalvar,
           finalizado: true,
-          enviadoFirebase: !widget.developerMode,
-          ignorarSincronizacao: widget.developerMode,
+          enviadoFirebase: true,
+          ignorarSincronizacao: false,
           erroEnvio: '',
         );
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.developerMode
-              ? 'Estimativa gerada em modo desenvolvedor (sem envio ao Firebase).'
-              : 'Estimativa gerada'),
-          backgroundColor: Colors.green,
-        ),
+        const SnackBar(content: Text('Estimativa gerada'), backgroundColor: Colors.green),
       );
       _relatorioSalvo = true;
       return true;
