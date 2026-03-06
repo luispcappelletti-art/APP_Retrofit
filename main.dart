@@ -2488,7 +2488,9 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       pw.SizedBox(height: 10),
       pw.Container(
         padding: const pw.EdgeInsets.all(10),
-        decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey300), borderRadius: pw.BorderRadius.circular(5)),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey300),
+        ),
         child: pw.Column(
           children: answers.entries.map((entry) {
             return pw.Padding(
@@ -2564,22 +2566,20 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         build: (pw.Context context) => [
           _buildAnswersSection('Informações do Cliente', widget.respostasIniciais, boldFont, font),
           pw.SizedBox(height: 16),
-          pw.KeepTogether(
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
-                pw.SizedBox(height: 8),
-                pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
-                pw.SizedBox(height: 8),
-                pw.Text(
-                  'Orçamento válido até: $dataValidadeFormatada',
-                  style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey800),
-                ),
-                pw.SizedBox(height: 16),
-                _buildAnswersSection('Respostas do Diagnóstico', widget.respostasQuestionario, boldFont, font),
-              ],
-            ),
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
+              pw.SizedBox(height: 8),
+              pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
+              pw.SizedBox(height: 8),
+              pw.Text(
+                'Orçamento válido até: $dataValidadeFormatada',
+                style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey800),
+              ),
+              pw.SizedBox(height: 16),
+              _buildAnswersSection('Respostas do Diagnóstico', widget.respostasQuestionario, boldFont, font),
+            ],
           ),
         ],
         footer: (pw.Context context) {
@@ -3276,7 +3276,6 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
           padding: const pw.EdgeInsets.all(10),
           decoration: pw.BoxDecoration(
             border: pw.Border.all(color: PdfColors.grey300),
-            borderRadius: pw.BorderRadius.circular(5),
           ),
           child: pw.Column(
             children: answers.entries.map((entry) {
@@ -3371,22 +3370,20 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
         build: (context) => [
           _buildAnswersSectionHistorico('Informações do Cliente', respostasIniciais, boldFont, font),
           pw.SizedBox(height: 16),
-          pw.KeepTogether(
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
-                pw.SizedBox(height: 8),
-                pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
-                pw.SizedBox(height: 8),
-                pw.Text(
-                  'Orçamento válido até: $dataValidadeFormatada',
-                  style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey800),
-                ),
-                pw.SizedBox(height: 16),
-                _buildAnswersSectionHistorico('Respostas do Diagnóstico', respostasQuestionario, boldFont, font),
-              ],
-            ),
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
+              pw.SizedBox(height: 8),
+              pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
+              pw.SizedBox(height: 8),
+              pw.Text(
+                'Orçamento válido até: $dataValidadeFormatada',
+                style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey800),
+              ),
+              pw.SizedBox(height: 16),
+              _buildAnswersSectionHistorico('Respostas do Diagnóstico', respostasQuestionario, boldFont, font),
+            ],
           ),
         ],
         footer: (pw.Context context) {
