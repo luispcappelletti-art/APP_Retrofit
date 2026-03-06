@@ -2446,21 +2446,6 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
     ]);
   }
 
-  pw.Widget _buildItensOrcamentoSection(List<OrcamentoItem> itens, pw.Font boldFont, pw.Font font) {
-    return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-      pw.Text('Itens do Orçamento', style: pw.TextStyle(font: boldFont, fontSize: 18)),
-      pw.SizedBox(height: 8),
-      ...itens.map(
-            (item) => pw.Padding(
-          padding: const pw.EdgeInsets.symmetric(vertical: 2),
-          child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-            pw.Expanded(child: pw.Text(item.descricao, style: pw.TextStyle(font: font, fontSize: 11))),
-          ]),
-        ),
-      ),
-    ]);
-  }
-
   Future<Uint8List> _generatePdfReport(PdfPageFormat format) async {
     final doc = pw.Document();
     pw.Font font;
@@ -2482,7 +2467,6 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
       logoImage = null;
     }
 
-    final itens = _itensAtuais();
     final estimativa = _calcularEstimativa();
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
     final estimativaFormatada =
@@ -2520,19 +2504,24 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
         },
         build: (pw.Context context) => [
           _buildAnswersSection('Informações do Cliente', widget.respostasIniciais, boldFont, font),
-          pw.SizedBox(height: 20),
-          _buildItensOrcamentoSection(itens, boldFont, font),
-          pw.SizedBox(height: 12),
-          pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
-          pw.SizedBox(height: 8),
-          pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
-          pw.SizedBox(height: 8),
-          pw.Text(
-            'Orçamento válido até: $dataValidadeFormatada',
-            style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey800),
+          pw.SizedBox(height: 16),
+          pw.KeepTogether(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
+                pw.SizedBox(height: 8),
+                pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
+                pw.SizedBox(height: 8),
+                pw.Text(
+                  'Orçamento válido até: $dataValidadeFormatada',
+                  style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey800),
+                ),
+                pw.SizedBox(height: 16),
+                _buildAnswersSection('Respostas do Diagnóstico', widget.respostasQuestionario, boldFont, font),
+              ],
+            ),
           ),
-          pw.SizedBox(height: 20),
-          _buildAnswersSection('Respostas do Diagnóstico', widget.respostasQuestionario, boldFont, font),
         ],
         footer: (pw.Context context) {
           return pw.Footer(
@@ -3256,31 +3245,6 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
     );
   }
 
-  pw.Widget _buildItensOrcamentoSectionHistorico(
-    List<OrcamentoItem> itens,
-    pw.Font boldFont,
-    pw.Font font,
-  ) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text('Itens do Orçamento', style: pw.TextStyle(font: boldFont, fontSize: 18)),
-        pw.SizedBox(height: 8),
-        ...itens.map(
-          (item) => pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(vertical: 2),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Expanded(child: pw.Text(item.descricao, style: pw.TextStyle(font: font, fontSize: 11))),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Future<Uint8List> _gerarPdfRegistro(Map<String, dynamic> registro) async {
     final dados = registro['dados'] is Map
         ? Map<String, dynamic>.from(registro['dados'])
@@ -3347,19 +3311,24 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
         },
         build: (context) => [
           _buildAnswersSectionHistorico('Informações do Cliente', respostasIniciais, boldFont, font),
-          pw.SizedBox(height: 20),
-          _buildItensOrcamentoSectionHistorico(itens, boldFont, font),
-          pw.SizedBox(height: 12),
-          pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
-          pw.SizedBox(height: 8),
-          pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
-          pw.SizedBox(height: 8),
-          pw.Text(
-            'Orçamento válido até: $dataValidadeFormatada',
-            style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey800),
+          pw.SizedBox(height: 16),
+          pw.KeepTogether(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
+                pw.SizedBox(height: 8),
+                pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
+                pw.SizedBox(height: 8),
+                pw.Text(
+                  'Orçamento válido até: $dataValidadeFormatada',
+                  style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey800),
+                ),
+                pw.SizedBox(height: 16),
+                _buildAnswersSectionHistorico('Respostas do Diagnóstico', respostasQuestionario, boldFont, font),
+              ],
+            ),
           ),
-          pw.SizedBox(height: 20),
-          _buildAnswersSectionHistorico('Respostas do Diagnóstico', respostasQuestionario, boldFont, font),
         ],
         footer: (pw.Context context) {
           return pw.Footer(
