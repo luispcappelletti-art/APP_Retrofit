@@ -3171,14 +3171,31 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
 
   List<OrcamentoItem> _itensDoRegistro(Map<String, dynamic> dados) {
     final itens = <OrcamentoItem>[];
-    final origem = dados['itensOrcamento'];
+    final origem = dados['itensOrcamento'] ?? dados['itens'];
+
+    double _parseValor(dynamic valorBruto) {
+      if (valorBruto is num) {
+        return valorBruto.toDouble();
+      }
+
+      if (valorBruto is String) {
+        final normalizado = valorBruto
+            .replaceAll(RegExp(r'[^0-9,.-]'), '')
+            .replaceAll('.', '')
+            .replaceAll(',', '.');
+
+        return double.tryParse(normalizado) ?? 0.0;
+      }
+
+      return 0.0;
+    }
 
     if (origem is List) {
       for (final item in origem) {
         if (item is! Map) continue;
         final map = Map<String, dynamic>.from(item);
         final descricao = map['descricao']?.toString() ?? 'Item sem descrição';
-        final valor = (map['valor'] as num?)?.toDouble() ?? 0.0;
+        final valor = _parseValor(map['valor']);
         itens.add(OrcamentoItem(descricao: descricao, valor: valor));
       }
     }
@@ -3246,6 +3263,10 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
   Future<void> _compartilharPdfRegistro(Map<String, dynamic> registro) async {
     try {
       final pdfBytes = await _gerarPdfRegistro(registro);
+      if (pdfBytes.isEmpty) {
+        throw Exception('O PDF não pôde ser gerado porque está vazio.');
+      }
+
       await Printing.sharePdf(
         bytes: pdfBytes,
         filename: 'orcamento_historico_${registro['id'] ?? DateTime.now().millisecondsSinceEpoch}.pdf',
