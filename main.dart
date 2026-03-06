@@ -3213,6 +3213,74 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
     return '${currencyFormat.format(valorMinimoArredondado)} ~ ${currencyFormat.format(valorMaximoArredondado)}';
   }
 
+  pw.Widget _buildAnswersSectionHistorico(
+    String title,
+    Map<String, String> answers,
+    pw.Font boldFont,
+    pw.Font regularFont,
+  ) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(title, style: pw.TextStyle(font: boldFont, fontSize: 18)),
+        pw.SizedBox(height: 10),
+        pw.Container(
+          padding: const pw.EdgeInsets.all(10),
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: PdfColors.grey300),
+            borderRadius: pw.BorderRadius.circular(5),
+          ),
+          child: pw.Column(
+            children: answers.entries.map((entry) {
+              return pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(vertical: 4),
+                child: pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Text('${entry.key}:', style: pw.TextStyle(font: boldFont)),
+                    ),
+                    pw.SizedBox(width: 8),
+                    pw.Expanded(
+                      flex: 3,
+                      child: pw.Text(entry.value, style: pw.TextStyle(font: regularFont)),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _buildItensOrcamentoSectionHistorico(
+    List<OrcamentoItem> itens,
+    pw.Font boldFont,
+    pw.Font font,
+  ) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text('Itens do Orçamento', style: pw.TextStyle(font: boldFont, fontSize: 18)),
+        pw.SizedBox(height: 8),
+        ...itens.map(
+          (item) => pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 2),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Expanded(child: pw.Text(item.descricao, style: pw.TextStyle(font: font, fontSize: 11))),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<Uint8List> _gerarPdfRegistro(Map<String, dynamic> registro) async {
     final dados = registro['dados'] is Map
         ? Map<String, dynamic>.from(registro['dados'])
@@ -3220,6 +3288,13 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
     final respostasIniciais = _mapString(dados['respostasIniciais']);
     final respostasQuestionario = _mapString(dados['respostasQuestionario']);
     final itens = _itensDoRegistro(dados);
+    final margemMaxima = (dados['margemPercentual'] as num?)?.toDouble() ?? 0.0;
+    final margemMinima = (dados['margemMinimaPercentual'] as num?)?.toDouble() ?? 0.0;
+    final estimativaFormatada = _estimativaFormatada(itens, margemMinima, margemMaxima);
+    final criadoEm = DateTime.tryParse(registro['criadoEm']?.toString() ?? '');
+    final dataReferencia = criadoEm ?? DateTime.now();
+    final dataValidade = DateTime(dataReferencia.year, dataReferencia.month + 1, dataReferencia.day);
+    final dataValidadeFormatada = DateFormat('dd/MM/yyyy').format(dataValidade);
 
     final doc = pw.Document();
     pw.Font font;
@@ -3232,28 +3307,69 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
       boldFont = pw.Font.helveticaBold();
     }
 
+    pw.MemoryImage? logoImage;
+    try {
+      final logoData = await rootBundle.load('assets/images/logo.png');
+      final logoBytes = logoData.buffer.asUint8List();
+      logoImage = pw.MemoryImage(logoBytes);
+    } catch (_) {
+      logoImage = null;
+    }
+
     doc.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
+        header: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('RESUMO DO ORÇAMENTO', style: pw.TextStyle(font: boldFont, fontSize: 22)),
+                      pw.Text(
+                        '${DateFormat('dd/MM/yyyy HH:mm').format(dataReferencia)} (histórico local)',
+                        style: pw.TextStyle(font: font, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                  if (logoImage != null) pw.Image(logoImage, height: 50),
+                ],
+              ),
+              pw.Divider(thickness: 2),
+              pw.SizedBox(height: 20),
+            ],
+          );
+        },
         build: (context) => [
-          pw.Text('RESUMO DO ORÇAMENTO (HISTÓRICO)', style: pw.TextStyle(font: boldFont, fontSize: 18)),
+          _buildAnswersSectionHistorico('Informações do Cliente', respostasIniciais, boldFont, font),
+          pw.SizedBox(height: 20),
+          _buildItensOrcamentoSectionHistorico(itens, boldFont, font),
+          pw.SizedBox(height: 12),
+          pw.Text('Estimativa de Valor', style: pw.TextStyle(font: boldFont, fontSize: 18)),
           pw.SizedBox(height: 8),
-          pw.Text('Cliente: ${_nomeCliente(respostasIniciais)}', style: pw.TextStyle(font: font, fontSize: 11)),
-          pw.Text('Contato: ${_contatoCliente(respostasIniciais)}', style: pw.TextStyle(font: font, fontSize: 11)),
-          pw.SizedBox(height: 12),
-          pw.Text('Dados iniciais', style: pw.TextStyle(font: boldFont, fontSize: 14)),
-          ...respostasIniciais.entries.map((e) => pw.Text('• ${e.key}: ${e.value}', style: pw.TextStyle(font: font, fontSize: 10))),
-          pw.SizedBox(height: 12),
-          pw.Text('Itens do orçamento', style: pw.TextStyle(font: boldFont, fontSize: 14)),
-          ...itens.map((item) => pw.Text('• ${item.descricao}: R\$ ${item.valor.toStringAsFixed(2)}', style: pw.TextStyle(font: font, fontSize: 10))),
-          pw.SizedBox(height: 12),
-          pw.Text('Estimativa: ${dados['estimativaFormatada'] ?? 'Não calculada'}', style: pw.TextStyle(font: boldFont, fontSize: 12)),
-          pw.Text('Margem máxima: ${(dados['margemPercentual'] ?? 0).toString()}%', style: pw.TextStyle(font: font, fontSize: 10)),
-          pw.Text('Margem mínima: ${(dados['margemMinimaPercentual'] ?? 0).toString()}%', style: pw.TextStyle(font: font, fontSize: 10)),
-          pw.SizedBox(height: 12),
-          pw.Text('Perguntas técnicas', style: pw.TextStyle(font: boldFont, fontSize: 14)),
-          ...respostasQuestionario.entries.map((e) => pw.Text('• ${e.key}: ${e.value}', style: pw.TextStyle(font: font, fontSize: 10))),
+          pw.Text(estimativaFormatada, style: pw.TextStyle(font: font, fontSize: 16)),
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'Orçamento válido até: $dataValidadeFormatada',
+            style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey800),
+          ),
+          pw.SizedBox(height: 20),
+          _buildAnswersSectionHistorico('Respostas do Diagnóstico', respostasQuestionario, boldFont, font),
         ],
+        footer: (pw.Context context) {
+          return pw.Footer(
+            title: pw.Text(
+              'Documento gerado por NS Retrofit',
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(font: font, fontSize: 9, color: PdfColors.grey),
+            ),
+          );
+        },
       ),
     );
 
