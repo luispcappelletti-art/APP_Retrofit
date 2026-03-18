@@ -1953,7 +1953,7 @@ class _PerguntaScreenState extends State<PerguntaScreen> {
               decoration: BoxDecoration(
                 color: Colors.deepPurple.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.deepPurple.withOpacity(0.3)),
+
               ),
               child: const Row(
                 children: [
@@ -2227,7 +2227,7 @@ class _ResultadoScreenState extends State<ResultadoScreen> {
   Map<String, dynamic> _montarDadosRelatorio(String estimativaFormatada) {
     final user = FirebaseAuth.instance.currentUser;
     final userEmail = user?.email ?? 'Usuário desconhecido';
-    const emailDestinatario = 'luis.cappeletti@grupobaw.com.br';
+    const emailDestinatario = 'viviane.rucks@grupobaw.com.br';
     final itens = _itensAtuais();
 
     return {
@@ -3233,7 +3233,7 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
   Map<String, String> _mapString(dynamic origem) {
     if (origem is! Map) return <String, String>{};
     return Map<String, dynamic>.from(origem).map(
-      (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
+          (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
     );
   }
 
@@ -3304,11 +3304,11 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
   }
 
   pw.Widget _buildAnswersSectionHistorico(
-    String title,
-    Map<String, String> answers,
-    pw.Font boldFont,
-    pw.Font regularFont,
-  ) {
+      String title,
+      Map<String, String> answers,
+      pw.Font boldFont,
+      pw.Font regularFont,
+      ) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -3540,8 +3540,8 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
     final itensIniciais = itensAtuais.isNotEmpty
         ? itensAtuais
         : respostasQuestionario.values
-            .map((resposta) => OrcamentoItem(descricao: resposta, valor: 0.0))
-            .toList();
+        .map((resposta) => OrcamentoItem(descricao: resposta, valor: 0.0))
+        .toList();
 
     final precos = <String, double>{
       for (final item in itensIniciais) item.descricao: item.valor,
@@ -3848,9 +3848,9 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
                               children: Map<String, dynamic>.from(dados['respostasIniciais'] as Map)
                                   .entries
                                   .map((e) => Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 2),
-                                        child: Text('• ${e.key}: ${e.value}'),
-                                      ))
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Text('• ${e.key}: ${e.value}'),
+                              ))
                                   .toList(),
                             ),
                           ),
@@ -3868,9 +3868,9 @@ class _HistoricoOrcamentosScreenState extends State<HistoricoOrcamentosScreen> {
                               children: Map<String, dynamic>.from(dados['respostasQuestionario'] as Map)
                                   .entries
                                   .map((e) => Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 2),
-                                        child: Text('• ${e.key}: ${e.value}'),
-                                      ))
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Text('• ${e.key}: ${e.value}'),
+                              ))
                                   .toList(),
                             ),
                           ),
