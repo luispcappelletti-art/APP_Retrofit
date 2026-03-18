@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -234,6 +235,32 @@ Future<void> enviarRelatorioParaFirebase({
     },
     'criadoEm': FieldValue.serverTimestamp(),
   });
+}
+
+Future<bool> temConexaoComInternet() async {
+  try {
+    final resultado = await InternetAddress.lookup('google.com')
+        .timeout(const Duration(seconds: 3));
+    return resultado.isNotEmpty && resultado.first.rawAddress.isNotEmpty;
+  } on SocketException {
+    return false;
+  } on TimeoutException {
+    return false;
+  }
+}
+
+bool erroIndicaFaltaDeConexao(Object erro) {
+  if (erro is SocketException || erro is TimeoutException) {
+    return true;
+  }
+
+  if (erro is FirebaseException) {
+    return erro.code == 'unavailable' ||
+        erro.code == 'network-request-failed' ||
+        erro.code == 'deadline-exceeded';
+  }
+
+  return false;
 }
 
 
@@ -880,6 +907,11 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
     final pendentes = await _historicoService.carregarPendentesEnvio();
     if (pendentes.isEmpty) return;
 
+    final bool online = await temConexaoComInternet();
+    if (!online) {
+      return;
+    }
+
     int enviados = 0;
 
     for (final registro in pendentes) {
@@ -899,7 +931,7 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
         await enviarRelatorioParaFirebase(
           dadosRelatorio: dadosMap,
           escopoEmailTexto: escopo,
-        );
+        ).timeout(const Duration(seconds: 8));
         enviados += 1;
         await _historicoService.atualizarRegistro(
           id: id,
@@ -911,6 +943,10 @@ class _PerguntasLivresScreenState extends State<PerguntasLivresScreen> {
           id: id,
           erroEnvio: e.toString(),
         );
+
+        if (erroIndicaFaltaDeConexao(e)) {
+          break;
+        }
       }
     }
 
@@ -2044,24 +2080,26 @@ class _PerguntaScreenState extends State<PerguntaScreen> {
                     );
                   }).toList(),
                 ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: _pularPergunta,
-                  icon: const Icon(Icons.skip_next_rounded),
-                  label: Text(temAlgumaOpcaoValida
-                      ? 'PULAR PERGUNTA'
-                      : 'AVANÇAR / PULAR PERGUNTA'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.teal,
-                    elevation: 1,
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: Colors.teal.withOpacity(0.5)),
+                if (widget.developerMode || !temAlgumaOpcaoValida) ...[
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _pularPergunta,
+                    icon: const Icon(Icons.skip_next_rounded),
+                    label: Text(temAlgumaOpcaoValida
+                        ? 'PULAR PERGUNTA'
+                        : 'AVANÇAR / PULAR PERGUNTA'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.teal,
+                      elevation: 1,
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.teal.withOpacity(0.5)),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
 
